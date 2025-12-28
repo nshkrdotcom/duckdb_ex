@@ -50,9 +50,18 @@ defmodule DuckdbEx.RelationJoinTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # Alice has 2 orders, Bob has 1 order, Charlie has no orders
       assert length(rows) == 3
-      assert Enum.any?(rows, &(&1["name"] == "Alice" and &1["amount"] == 100.00))
-      assert Enum.any?(rows, &(&1["name"] == "Alice" and &1["amount"] == 200.00))
-      assert Enum.any?(rows, &(&1["name"] == "Bob" and &1["amount"] == 150.00))
+
+      assert Enum.any?(rows, fn {_id, name, _order_id, _user_id, amount} ->
+               name == "Alice" and amount == 100.00
+             end)
+
+      assert Enum.any?(rows, fn {_id, name, _order_id, _user_id, amount} ->
+               name == "Alice" and amount == 200.00
+             end)
+
+      assert Enum.any?(rows, fn {_id, name, _order_id, _user_id, amount} ->
+               name == "Bob" and amount == 150.00
+             end)
     end
 
     test "inner join filters out non-matching rows", %{conn: conn} do
@@ -63,7 +72,7 @@ defmodule DuckdbEx.RelationJoinTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # Charlie should not appear (no orders)
-      refute Enum.any?(rows, &(&1["name"] == "Charlie"))
+      refute Enum.any?(rows, fn {_id, name, _order_id, _user_id, _amount} -> name == "Charlie" end)
     end
 
     test "inner join can be chained with other operations", %{conn: conn} do
@@ -78,7 +87,7 @@ defmodule DuckdbEx.RelationJoinTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 2
-      assert hd(rows)["amount"] == 200.00
+      assert elem(hd(rows), 4) == 200.00
     end
   end
 
@@ -94,9 +103,11 @@ defmodule DuckdbEx.RelationJoinTest do
       assert length(rows) == 4
 
       # Charlie should appear with NULL order values
-      charlie_row = Enum.find(rows, &(&1["name"] == "Charlie"))
+      charlie_row =
+        Enum.find(rows, fn {_id, name, _order_id, _user_id, _amount} -> name == "Charlie" end)
+
       assert charlie_row != nil
-      assert charlie_row["order_id"] == nil
+      assert elem(charlie_row, 2) == nil
     end
 
     test "left join with filter on left table", %{conn: conn} do
@@ -111,7 +122,8 @@ defmodule DuckdbEx.RelationJoinTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # Only Alice and Bob
       assert length(rows) == 3
-      refute Enum.any?(rows, &(&1["name"] == "Charlie"))
+
+      refute Enum.any?(rows, fn {_id, name, _order_id, _user_id, _amount} -> name == "Charlie" end)
     end
   end
 
@@ -126,7 +138,7 @@ defmodule DuckdbEx.RelationJoinTest do
       # All 3 orders should be included
       assert length(rows) == 3
       # All rows should have order data
-      assert Enum.all?(rows, &(&1["order_id"] != nil))
+      assert Enum.all?(rows, fn {_id, _name, order_id, _user_id, _amount} -> order_id != nil end)
     end
   end
 
@@ -168,10 +180,10 @@ defmodule DuckdbEx.RelationJoinTest do
       # 2 x 2 = 4 rows
       assert length(rows) == 4
       # Each combination should exist
-      assert Enum.any?(rows, &(&1["x"] == 1 and &1["y"] == 3))
-      assert Enum.any?(rows, &(&1["x"] == 1 and &1["y"] == 4))
-      assert Enum.any?(rows, &(&1["x"] == 2 and &1["y"] == 3))
-      assert Enum.any?(rows, &(&1["x"] == 2 and &1["y"] == 4))
+      assert Enum.any?(rows, fn {x, y} -> x == 1 and y == 3 end)
+      assert Enum.any?(rows, fn {x, y} -> x == 1 and y == 4 end)
+      assert Enum.any?(rows, fn {x, y} -> x == 2 and y == 3 end)
+      assert Enum.any?(rows, fn {x, y} -> x == 2 and y == 4 end)
     end
   end
 
@@ -193,13 +205,13 @@ defmodule DuckdbEx.RelationJoinTest do
       # Alice: 100 + 200 = 300, Bob: 150
       assert length(rows) == 2
 
-      alice_row = Enum.find(rows, &(&1["name"] == "Alice"))
-      assert alice_row["total_amount"] == 300.00
-      assert alice_row["order_count"] == 2
+      alice_row = Enum.find(rows, fn {name, _total, _count} -> name == "Alice" end)
+      assert elem(alice_row, 1) == 300.00
+      assert elem(alice_row, 2) == 2
 
-      bob_row = Enum.find(rows, &(&1["name"] == "Bob"))
-      assert bob_row["total_amount"] == 150.00
-      assert bob_row["order_count"] == 1
+      bob_row = Enum.find(rows, fn {name, _total, _count} -> name == "Bob" end)
+      assert elem(bob_row, 1) == 150.00
+      assert elem(bob_row, 2) == 1
     end
   end
 
@@ -243,8 +255,8 @@ defmodule DuckdbEx.RelationJoinTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # Order 101 has 2 items, Order 102 has 1 item
       assert length(rows) == 3
-      assert Enum.any?(rows, &(&1["product_name"] == "Widget"))
-      assert Enum.any?(rows, &(&1["product_name"] == "Gadget"))
+      assert Enum.any?(rows, fn row -> elem(row, 7) == "Widget" end)
+      assert Enum.any?(rows, fn row -> elem(row, 7) == "Gadget" end)
     end
   end
 end

@@ -12,18 +12,22 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 
 ### Current Implementation Status
 
-**Implemented (6 modules, ~1,200 LOC, 96 passing tests)**:
-- ✅ Connection management (connect, close)
-- ✅ Query execution (execute)
-- ✅ Result fetching (fetch_all, fetch_one, fetch_many)
+**Implemented (core modules, 158 passing tests)**:
+- ✅ Connection management (connect, close, default connection)
+- ✅ Query execution (execute, executemany) with parameter binding
+- ✅ Result fetching (fetch_all, fetch_one, fetch_many) with tuple rows
+- ✅ Statement parsing (extract_statements) + DB-API description/rowcount
+- ✅ Transaction management (begin, commit, rollback, transaction, checkpoint)
+- ✅ CSV/JSON/Parquet reading + Relation to_csv/to_parquet
 - ✅ Complete exception hierarchy (27 exception types)
 - ✅ Port-based process management
-- ✅ **Relation API - Basic Operations** (project, filter, limit, order, distinct)
+- ✅ **Relation API - Basic Operations** (project, filter, limit + offset, order, sort, distinct, unique)
 - ✅ **Relation API - Aggregations** (aggregate, count, sum, avg, min, max, GROUP BY)
-- ✅ **Relation API - Set Operations** (union, intersect, except) ✅ **NEW in Phase 1.3**
-- ✅ **Relation API - Joins** (inner, left, right, outer, cross) ✅ **NEW in Phase 1.3**
+- ✅ **Relation API - Set Operations** (union, intersect, except)
+- ✅ **Relation API - Joins** (inner, left, right, outer, cross)
 - ✅ Lazy SQL evaluation with method chaining
-- ✅ Comprehensive test coverage (96 tests, 100% pass rate)
+- ✅ **Relation API - Mutations** (create, create_view, insert, insert_into, update)
+- ✅ **Relation API - Export** (to_csv, to_parquet)
 
 **Architecture**: Uses DuckDB CLI in JSON mode via erlexec instead of native NIFs.
 
@@ -36,7 +40,7 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 ### 1.1 Implemented in lib/duckdb_ex/connection.ex
 ```elixir
 ✅ connect/2 - Opens database connection
-✅ execute/3 - Executes SQL query (params not yet functional)
+✅ execute/3 - Executes SQL query with parameter binding
 ✅ close/1 - Closes connection
 ✅ fetch_all/2 - Fetches all rows
 ✅ fetch_one/2 - Fetches one row
@@ -51,26 +55,26 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 - `__exit__/3` - Context manager exit
 
 **Advanced Query Execution**:
-- `executemany/2` - Execute with multiple parameter sets
-- `extract_statements/1` - Parse SQL into statement objects
-- Parameter binding (both `?` positional and `:name` named)
+- ✅ `executemany/2` - Execute with multiple parameter sets
+- ✅ `extract_statements/1` - Parse SQL into statement objects
+- ✅ Parameter binding (positional, `$n`, and named)
 
 **Query Result Properties**:
-- `description` - Column metadata (DB-API 2.0)
-- `rowcount` - Number of affected rows (DB-API 2.0)
+- ✅ `description` - Column metadata (DB-API 2.0)
+- ✅ `rowcount` - Number of affected rows (DB-API 2.0)
 
 **Relational Query Builders**:
 - ✅ `sql/2` - Returns DuckDBPyRelation instead of executing ✅ **IMPLEMENTED**
-- `query/3` - Execute and return relation (with alias, params)
+- ✅ `query/3` - Execute and return relation (with alias, params)
 - ✅ `table/2` - Create relation from table ✅ **IMPLEMENTED**
-- `view/1` - Create relation from view (partially via table/2)
-- `values/1` - Create relation from values
+- ✅ `view/1` - Create relation from view
+- ✅ `values/1` - Create relation from values
 - `table_function/2` - Call table function
 
-**Data Source Readers** (0/7 implemented):
-- `read_csv/2` - Read CSV files
-- `read_json/2` - Read JSON files
-- `read_parquet/2` - Read Parquet files
+**Data Source Readers** (3/7 implemented):
+- ✅ `read_csv/2` - Read CSV files
+- ✅ `read_json/2` - Read JSON files
+- ✅ `read_parquet/2` - Read Parquet files
 - `from_df/1` - Import from DataFrame (Explorer integration)
 - `from_arrow/1` - Import from Arrow tables
 - `from_csv_auto/2` - Auto-detect CSV format
@@ -87,11 +91,11 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 - `torch/0` - Fetch as PyTorch tensors
 - `tf/0` - Fetch as TensorFlow tensors
 
-**Transaction Management** (0/4 implemented):
-- `begin/0` - Start transaction
-- `commit/0` - Commit transaction
-- `rollback/0` - Rollback transaction
-- `checkpoint/0` - Checkpoint database
+**Transaction Management** (4/4 implemented):
+- ✅ `begin/0` - Start transaction
+- ✅ `commit/0` - Commit transaction
+- ✅ `rollback/0` - Rollback transaction
+- ✅ `checkpoint/0` - Checkpoint database
 
 **Object Registration** (0/3 implemented):
 - `register/2` - Register Python/Elixir object as table
@@ -127,8 +131,8 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 **Metadata** (0/1 implemented):
 - `get_table_names/2` - Get table names from query
 
-**Utility** (0/2 implemented):
-- `cursor/0` - Create new cursor (connection clone)
+**Utility** (1/2 implemented):
+- ✅ `cursor/0` - Create new cursor (Cursor wrapper)
 - `query_progress/0` - Get query execution progress
 - `interrupt/0` - Interrupt running query
 
@@ -145,20 +149,20 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 **Module Creation**: ✅ `DuckdbEx.Relation` created with ~800 LOC, fully documented
 
 **Properties** (1/5 implemented):
-- ✅ Relation struct with `conn`, `sql`, `alias` fields
+- ✅ Relation struct with `conn`, `sql`, `alias`, `source` fields
 - `columns` - Column names (TODO)
 - `types` - Column type names (TODO)
 - `dtypes` - Column DuckDBPyType objects (TODO)
 - `type` - Relation type string (TODO)
 
-**Basic Operations** (5/7 implemented): ✅
+**Basic Operations** (7/7 implemented): ✅
 - ✅ `project/2` - Select/transform columns ✅ **IMPLEMENTED**
 - ✅ `filter/2` - Filter rows ✅ **IMPLEMENTED**
-- ✅ `limit/2` - Limit result rows ✅ **IMPLEMENTED**
+- ✅ `limit/2` - Limit result rows (offset supported) ✅ **IMPLEMENTED**
 - ✅ `order/2` - Sort rows ✅ **IMPLEMENTED**
 - ✅ `distinct/1` - Remove duplicates ✅ **IMPLEMENTED (Phase 1.3)**
-- `sort/1` - Alias for order (trivial to add)
-- `unique/1` - Distinct with grouping (TODO)
+- ✅ `sort/1` - Alias for order ✅ **IMPLEMENTED**
+- ✅ `unique/1` - Distinct with grouping ✅ **IMPLEMENTED**
 
 **Aliasing** (0/2 implemented):
 - `set_alias/1` - Set relation alias (TODO)
@@ -203,18 +207,18 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 
 **Execution & Fetching** (4/11 implemented): ✅
 - ✅ `execute/1` - Execute relation ✅ **IMPLEMENTED**
-- ✅ `fetch_one/1` - Fetch first row as map ✅ **IMPLEMENTED**
-- ✅ `fetch_many/2` - Fetch N rows as maps ✅ **IMPLEMENTED**
-- ✅ `fetch_all/1` - Fetch all rows as maps ✅ **IMPLEMENTED**
+- ✅ `fetch_one/1` - Fetch first row as tuple ✅ **IMPLEMENTED**
+- ✅ `fetch_many/2` - Fetch N rows as tuples ✅ **IMPLEMENTED**
+- ✅ `fetch_all/1` - Fetch all rows as tuples ✅ **IMPLEMENTED**
 - `fetchdf/1`, `fetch_df/1`, `fetch_df_chunk/2` - Fetch DataFrames (TODO - Phase 2)
 - `fetchnumpy/0` - Fetch numpy arrays (N/A for Elixir)
 - `fetch_arrow_table/1`, `fetch_record_batch_reader/1` - Fetch Arrow (TODO)
 - `pl/2` - Fetch Polars (lazy or eager) (N/A for Elixir)
 - `torch/0`, `tf/0` - Fetch ML tensors (N/A - Nx equivalent planned)
 
-**Data Export** (0/3 implemented):
-- `to_csv/2` - Export to CSV
-- `to_parquet/2` - Export to Parquet
+**Data Export** (2/3 implemented):
+- ✅ `to_csv/2` - Export to CSV
+- ✅ `to_parquet/2` - Export to Parquet
 - `to_arrow_table/1` - Convert to Arrow table
 
 **Arrow C Interface** (0/1 implemented):
@@ -223,12 +227,12 @@ This document analyzes the gap between the current `duckdb_ex` implementation an
 **Transformations** (0/1 implemented):
 - `map/2` - Apply function to relation
 
-**Table/View Operations** (0/5 implemented):
-- `create_view/2` - Create view from relation
-- `create/1` - Materialize as table
-- `insert_into/1` - Insert into existing table
-- `insert/1` - Insert values
-- `update/2` - Update rows
+**Table/View Operations** (5/5 implemented):
+- ✅ `create_view/2` - Create view from relation
+- ✅ `create/1` - Materialize as table
+- ✅ `insert_into/1` - Insert into existing table
+- ✅ `insert/1` - Insert values
+- ✅ `update/2` - Update rows
 
 **Metadata** (0/4 implemented):
 - `describe/0` - Summary statistics
@@ -1056,29 +1060,29 @@ df = conn
 - [x] connect/2
 - [x] execute/3
 - [x] close/1
-- [ ] executemany/2
-- [ ] cursor/0
+- [x] executemany/2
+- [x] cursor/0
 - [x] **sql/2** ✅ NEW
-- [ ] query/3
+- [x] query/3
 - [x] **table/2** ✅ NEW
-- [ ] view/1
-- [ ] values/1
-- [ ] read_csv/2
-- [ ] read_json/2
-- [ ] read_parquet/2
+- [x] view/1
+- [x] values/1
+- [x] read_csv/2
+- [x] read_json/2
+- [x] read_parquet/2
 - [ ] from_df/1
 - [ ] from_arrow/1
-- [ ] fetchall/0
-- [ ] fetchone/0
-- [ ] fetchmany/1
+- [x] fetchall/0
+- [x] fetchone/0
+- [x] fetchmany/1
 - [ ] fetchdf/1
 - [ ] fetchnumpy/0
 - [ ] begin/0
 - [ ] commit/0
 - [ ] rollback/0
 - [ ] checkpoint/0
-- [ ] default_connection/0
-- [ ] set_default_connection/1
+- [x] default_connection/0
+- [x] set_default_connection/1
 
 ### Module: DuckdbEx.Connection
 - [x] connect/2
@@ -1091,12 +1095,15 @@ df = conn
 - [ ] (200+ methods from Python API - see Section 1.2)
 
 ### Module: DuckdbEx.Relation ✅ **NOW EXISTS**
-**Implemented (16 functions)**:
-- [x] **new/3** - Relation constructor
+**Implemented (31+ functions)**:
+- [x] **new/4** - Relation constructor
 - [x] **project/2** - Select columns
 - [x] **filter/2** - Filter rows
-- [x] **limit/2** - Limit results
+- [x] **limit/3** - Limit results with offset
 - [x] **order/2** - Sort results
+- [x] **sort/2** - Sort alias
+- [x] **distinct/1** - Remove duplicates
+- [x] **unique/2** - Distinct values for columns
 - [x] **aggregate/2** - Generic aggregation
 - [x] **aggregate/3** - Aggregation with GROUP BY
 - [x] **count/0** - Count convenience
@@ -1104,11 +1111,23 @@ df = conn
 - [x] **avg/1** - Average convenience
 - [x] **min/1** - Min convenience
 - [x] **max/1** - Max convenience
+- [x] **union/2** - Union relations
+- [x] **except_/2** - Set difference
+- [x] **intersect/2** - Set intersection
+- [x] **join/4** - Join relations
+- [x] **cross/2** - Cross join
 - [x] **execute/1** - Execute relation
 - [x] **fetch_all/1** - Fetch all rows
 - [x] **fetch_one/1** - Fetch first row
 - [x] **fetch_many/2** - Fetch N rows
-- [ ] ~134 methods remaining - see Section 2
+- [x] **to_csv/3** - Export to CSV
+- [x] **to_parquet/3** - Export to Parquet
+- [x] **create/2** - Create table
+- [x] **create_view/3** - Create view
+- [x] **insert_into/2** - Insert into table
+- [x] **insert/2** - Insert row values
+- [x] **update/3** - Update rows
+- [ ] ~120+ methods remaining - see Section 2
 
 ### Module: DuckdbEx.Result
 - [x] fetch_all/1

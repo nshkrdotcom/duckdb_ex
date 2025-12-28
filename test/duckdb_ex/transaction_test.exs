@@ -48,7 +48,7 @@ defmodule DuckdbEx.TransactionTest do
       {:ok, _} = Connection.commit(conn)
 
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 2000}] = rows
+      assert [{2000}] = rows
     end
   end
 
@@ -68,7 +68,7 @@ defmodule DuckdbEx.TransactionTest do
       {:ok, _} = Connection.rollback(conn)
 
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 1000}] = rows
+      assert [{1000}] = rows
     end
   end
 
@@ -93,7 +93,7 @@ defmodule DuckdbEx.TransactionTest do
         end)
 
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 2000}] = rows
+      assert [{2000}] = rows
     end
 
     test "rolls back on error", %{conn: conn} do
@@ -108,7 +108,7 @@ defmodule DuckdbEx.TransactionTest do
 
       # Verify rollback - balance should be unchanged
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 1000}] = rows
+      assert [{1000}] = rows
     end
 
     test "rolls back on exception", %{conn: conn} do
@@ -122,7 +122,7 @@ defmodule DuckdbEx.TransactionTest do
 
       # Verify rollback - balance should be unchanged
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 1000}] = rows
+      assert [{1000}] = rows
     end
 
     test "supports complex transaction logic", %{conn: conn} do
@@ -141,9 +141,9 @@ defmodule DuckdbEx.TransactionTest do
         end)
 
       assert [
-               %{"id" => 1, "balance" => 900},
-               %{"id" => 2, "balance" => 600},
-               %{"id" => 3, "balance" => 750}
+               {1, 900},
+               {2, 600},
+               {3, 750}
              ] = result
     end
 
@@ -154,13 +154,13 @@ defmodule DuckdbEx.TransactionTest do
             Connection.execute(conn, "UPDATE accounts SET balance = balance * 2 WHERE id = 1")
 
           {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-          assert [%{"balance" => 2000}] = rows
+          assert [{2000}] = rows
           :ok
         end)
 
       # Verify committed
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 2000}] = rows
+      assert [{2000}] = rows
     end
 
     test "transaction returns function result on success", %{conn: conn} do
@@ -191,11 +191,11 @@ defmodule DuckdbEx.TransactionTest do
 
       # conn1 should still have original value
       {:ok, rows1} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 1000}] = rows1
+      assert [{1000}] = rows1
 
       # conn2 should be unaffected
       {:ok, rows2} = Connection.fetch_all(conn2, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 1000}] = rows2
+      assert [{1000}] = rows2
     end
   end
 
@@ -211,7 +211,7 @@ defmodule DuckdbEx.TransactionTest do
 
       # Original data should be intact
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 1000}] = rows
+      assert [{1000}] = rows
     end
 
     test "handles constraint violations", %{conn: conn} do
@@ -242,14 +242,14 @@ defmodule DuckdbEx.TransactionTest do
 
       # In same connection, should see change
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 2000}] = rows
+      assert [{2000}] = rows
 
       # Rollback
       {:ok, _} = Connection.rollback(conn)
 
       # Should be back to original
       {:ok, rows} = Connection.fetch_all(conn, "SELECT balance FROM accounts WHERE id = 1")
-      assert [%{"balance" => 1000}] = rows
+      assert [{1000}] = rows
     end
   end
 

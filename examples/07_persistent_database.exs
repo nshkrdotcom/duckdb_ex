@@ -57,8 +57,8 @@ IO.puts("\n4. Reopening database to verify persistence:")
 
 IO.puts("✓ Data persisted! Found #{length(rows)} users:")
 
-Enum.each(rows, fn user ->
-  IO.puts("  - #{user["username"]} (#{user["email"]})")
+Enum.each(rows, fn {_id, username, email, _created_at} ->
+  IO.puts("  - #{username} (#{email})")
 end)
 
 # Add more data in second session
@@ -71,21 +71,25 @@ IO.puts("\n5. Adding more data:")
       (5, 'eve', 'eve@example.com')
   """)
 
-{:ok, [count]} = Connection.fetch_all(conn2, "SELECT COUNT(*) as total FROM users")
-IO.puts("✓ Now have #{count["total"]} users total")
+{:ok, [{total}]} = Connection.fetch_all(conn2, "SELECT COUNT(*) as total FROM users")
+IO.puts("✓ Now have #{total} users total")
+
+# Close write connection before opening read-only to avoid file lock conflicts
+Connection.close(conn2)
+IO.puts("\n6. Closed write connection before read-only test")
 
 # Read-only connection
-IO.puts("\n6. Opening read-only connection:")
+IO.puts("\n7. Opening read-only connection:")
 {:ok, readonly_conn} = Connection.connect(db_path, read_only: true)
 {:ok, rows} = Connection.fetch_all(readonly_conn, "SELECT username FROM users ORDER BY id")
 IO.puts("✓ Read-only access successful, users:")
 
-Enum.each(rows, fn user ->
-  IO.puts("  - #{user["username"]}")
+Enum.each(rows, fn {username} ->
+  IO.puts("  - #{username}")
 end)
 
 # Try to write with read-only connection (should fail)
-IO.puts("\n7. Attempting write with read-only connection:")
+IO.puts("\n8. Attempting write with read-only connection:")
 
 case Connection.execute(
        readonly_conn,
@@ -98,21 +102,16 @@ case Connection.execute(
     IO.puts("⚠ Warning: Write should have been blocked!")
 end
 
-# Checkpoint to flush WAL
-IO.puts("\n8. Creating checkpoint:")
-{:ok, _} = Connection.checkpoint(conn2)
-IO.puts("✓ Checkpoint created")
-
-Connection.close(conn2)
 Connection.close(readonly_conn)
 
-# Final size
-final_size = File.stat!(db_path).size
-IO.puts("\n9. Final database file size: #{final_size} bytes")
+# Reopen write connection for checkpoint and metadata
+IO.puts("\n9. Reopening write connection for checkpoint:")
+{:ok, conn3} = Connection.connect(db_path)
+{:ok, _} = Connection.checkpoint(conn3)
+IO.puts("✓ Checkpoint created")
 
 # Show database info
 IO.puts("\n10. Database info:")
-{:ok, conn3} = Connection.connect(db_path)
 
 {:ok, tables} =
   Connection.fetch_all(conn3, """
@@ -121,11 +120,15 @@ IO.puts("\n10. Database info:")
     WHERE schema_name = 'main'
   """)
 
-Enum.each(tables, fn table ->
-  IO.puts("  - Table '#{table["table_name"]}': ~#{table["estimated_size"]} rows")
+Enum.each(tables, fn {table_name, estimated_size} ->
+  IO.puts("  - Table '#{table_name}': ~#{estimated_size} rows")
 end)
 
 Connection.close(conn3)
+
+# Final size
+final_size = File.stat!(db_path).size
+IO.puts("\n11. Final database file size: #{final_size} bytes")
 
 IO.puts("\n✓ Done")
 IO.puts("\nDatabase saved at: #{db_path}")

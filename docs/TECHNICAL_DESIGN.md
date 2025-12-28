@@ -17,6 +17,18 @@ All implementation decisions should reference the Python implementation for:
 
 ## Architecture Overview
 
+### Current Implementation (CLI)
+
+DuckdbEx currently uses the DuckDB CLI in JSON mode managed via `erlexec`. The
+`DuckdbEx.Port` GenServer owns the CLI process and parses ordered JSON results
+into tuple rows. Connections are PIDs; cursors are lightweight wrappers around
+the connection PID to avoid extra file locks in the CLI backend.
+
+Environment configuration:
+- `DUCKDB_PATH` to locate the CLI binary.
+- `DUCKDB_EX_EXEC_AS_ROOT` to force root execution when required in containers.
+- `mix duckdb_ex.install` installs the CLI into the project `priv/duckdb/duckdb` and is picked up automatically.
+
 ### Core Components
 
 The DuckDB Elixir client mirrors the Python architecture with the following main components:
@@ -48,7 +60,11 @@ The DuckDB Elixir client mirrors the Python architecture with the following main
    - All DuckDB exception types
    - Maps Python exception hierarchy to Elixir
 
-## NIF Layer Design
+## Future NIF Layer Design (Not Implemented)
+
+The sections below describe a potential Rustler-based NIF architecture. The
+current implementation does **not** use NIFs; it uses the CLI-based port
+described above.
 
 ### Technology Stack
 
@@ -89,20 +105,17 @@ lib/duckdb_ex/
 ├── connection.ex           # Main connection module
 ├── relation.ex             # Relation/query builder
 ├── result.ex               # Result handling
-├── type.ex                 # Type system
 ├── exceptions.ex           # Exception definitions
-├── statement.ex            # Prepared statements
-├── value/
-│   └── constant.ex         # Value types (maps Python value/constant)
-├── functional.ex           # Functional API
-├── expression/
-│   ├── expression.ex       # Base expression
-│   ├── column.ex           # Column expression
-│   ├── constant.ex         # Constant expression
-│   ├── function.ex         # Function expression
-│   ├── case.ex             # Case expression
-│   └── lambda.ex           # Lambda expression
-└── native.ex               # NIF wrapper module
+├── port.ex                 # DuckDB CLI process management
+├── default_connection.ex   # Default connection holder
+├── cursor.ex               # Cursor wrapper
+├── parameters.ex           # SQL parameter interpolation
+├── statement.ex            # Statement metadata
+├── statement_type.ex       # Statement type enum
+└── expected_result_type.ex # Expected result enum
+
+# Planned modules (not yet implemented)
+# - type.ex, expression/*, value/*, arrow/*, etc.
 ```
 
 ## API Surface

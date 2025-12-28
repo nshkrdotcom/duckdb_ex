@@ -10,21 +10,22 @@ defmodule DuckdbEx.Result do
   ## Overview
 
   Results are returned as maps containing:
-  - `:rows` - List of row data (maps with column names as keys)
+  - `:rows` - List of row tuples in column order
   - `:row_count` - Number of rows
   - `:columns` - List of column names (when available)
 
   ## Examples
 
-      {:ok, result} = DuckdbEx.Connection.execute(conn, "SELECT 1 as num, 'hello' as text")
-      #=> {:ok, %{rows: [%{"num" => 1, "text" => "hello"}], row_count: 1}}
+      {:ok, result} = DuckdbEx.Connection.execute_result(conn, "SELECT 1 as num, 'hello' as text")
+      #=> {:ok, %{rows: [{1, "hello"}], row_count: 1, columns: ["num", "text"]}}
 
       rows = DuckdbEx.Result.fetch_all(result)
-      #=> [%{"num" => 1, "text" => "hello"}]
+      #=> [{1, "hello"}]
   """
 
+  @type row :: tuple() | map()
   @type t :: %{
-          rows: list(map()),
+          rows: list(row()),
           row_count: non_neg_integer(),
           columns: list(String.t()) | nil
         }
@@ -38,21 +39,19 @@ defmodule DuckdbEx.Result do
 
   ## Returns
 
-  - List of row maps
+  - List of row tuples
 
   ## Examples
 
-      {:ok, result} = DuckdbEx.Connection.execute(conn, "SELECT 1, 2, 3")
+      {:ok, result} = DuckdbEx.Connection.execute_result(conn, "SELECT 1, 2, 3")
       rows = DuckdbEx.Result.fetch_all(result)
 
   Reference: DuckDBPyResult.fetchall() in Python
   """
-  @spec fetch_all(t()) :: list(map())
-  def fetch_all(%{rows: rows}) when is_list(rows) do
-    rows
+  @spec fetch_all(t()) :: list(tuple())
+  def fetch_all(result) do
+    to_tuples(result)
   end
-
-  def fetch_all(_), do: []
 
   @doc """
   Fetches one row from a result.
@@ -65,26 +64,23 @@ defmodule DuckdbEx.Result do
 
   ## Returns
 
-  - Row map or nil
+  - Row tuple or nil
 
   ## Examples
 
-      {:ok, result} = DuckdbEx.Connection.execute(conn, "SELECT 1 as num")
+      {:ok, result} = DuckdbEx.Connection.execute_result(conn, "SELECT 1 as num")
       row = DuckdbEx.Result.fetch_one(result)
-      #=> %{"num" => 1}
+      #=> {1}
 
   Reference: DuckDBPyResult.fetchone() in Python
   """
-  @spec fetch_one(t()) :: map() | nil
-  def fetch_one(%{rows: [first | _]}) do
-    first
+  @spec fetch_one(t()) :: tuple() | nil
+  def fetch_one(result) do
+    case to_tuples(result) do
+      [first | _] -> first
+      _ -> nil
+    end
   end
-
-  def fetch_one(%{rows: []}) do
-    nil
-  end
-
-  def fetch_one(_), do: nil
 
   @doc """
   Fetches multiple rows from a result.
@@ -98,19 +94,21 @@ defmodule DuckdbEx.Result do
 
   ## Returns
 
-  - List of row maps (up to `count` rows)
+  - List of row tuples (up to `count` rows)
 
   ## Examples
 
-      {:ok, result} = DuckdbEx.Connection.execute(conn, "SELECT * FROM range(10)")
+      {:ok, result} = DuckdbEx.Connection.execute_result(conn, "SELECT * FROM range(10)")
       rows = DuckdbEx.Result.fetch_many(result, 3)
-      #=> [%{"range" => 0}, %{"range" => 1}, %{"range" => 2}]
+      #=> [{0}, {1}, {2}]
 
   Reference: DuckDBPyResult.fetchmany() in Python
   """
-  @spec fetch_many(t(), non_neg_integer()) :: list(map())
-  def fetch_many(%{rows: rows}, count) when is_list(rows) and is_integer(count) do
-    Enum.take(rows, count)
+  @spec fetch_many(t(), non_neg_integer()) :: list(tuple())
+  def fetch_many(result, count) when is_integer(count) do
+    result
+    |> to_tuples()
+    |> Enum.take(count)
   end
 
   def fetch_many(_, _count), do: []
@@ -156,17 +154,28 @@ defmodule DuckdbEx.Result do
 
   ## Examples
 
-      {:ok, result} = DuckdbEx.Connection.execute(conn, "SELECT 1, 'hello'")
+      {:ok, result} = DuckdbEx.Connection.execute_result(conn, "SELECT 1, 'hello'")
       tuples = DuckdbEx.Result.to_tuples(result)
       #=> [{1, "hello"}]
   """
   @spec to_tuples(t()) :: list(tuple())
-  def to_tuples(%{rows: rows}) when is_list(rows) do
-    Enum.map(rows, fn row when is_map(row) ->
-      row
-      |> Map.values()
-      |> List.to_tuple()
-    end)
+  def to_tuples(%{rows: rows} = result) when is_list(rows) do
+    cond do
+      rows == [] ->
+        []
+
+      is_tuple(hd(rows)) ->
+        rows
+
+      true ->
+        columns = columns(%{rows: rows, columns: Map.get(result, :columns, [])}) || []
+
+        Enum.map(rows, fn row when is_map(row) ->
+          columns
+          |> Enum.map(&Map.get(row, &1))
+          |> List.to_tuple()
+        end)
+    end
   end
 
   def to_tuples(_), do: []
@@ -188,13 +197,15 @@ defmodule DuckdbEx.Result do
       columns = DuckdbEx.Result.columns(result)
       #=> ["num", "text"] or nil
   """
-  @spec columns(t()) :: list(String.t()) | nil
-  def columns(%{columns: cols}) when is_list(cols) do
+  @spec columns(map()) :: list(String.t()) | nil
+  def columns(%{columns: cols}) when is_list(cols) and cols != [] do
     cols
   end
 
   def columns(%{rows: [first | _]}) when is_map(first) do
-    Map.keys(first)
+    first
+    |> Map.keys()
+    |> Enum.map(&to_string/1)
   end
 
   def columns(_), do: nil

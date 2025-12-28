@@ -21,7 +21,7 @@ defmodule DuckdbEx.RelationSetOpsTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 3
-      assert Enum.sort_by(rows, & &1["x"]) == [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}]
+      assert Enum.sort_by(rows, &elem(&1, 0)) == [{1}, {2}, {3}]
     end
 
     test "distinct on multiple columns", %{conn: conn} do
@@ -63,7 +63,7 @@ defmodule DuckdbEx.RelationSetOpsTest do
         |> DuckdbEx.Relation.order("x ASC")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert rows == [%{"x" => 2}, %{"x" => 3}]
+      assert rows == [{2}, {3}]
     end
   end
 
@@ -77,7 +77,7 @@ defmodule DuckdbEx.RelationSetOpsTest do
 
       # UNION removes duplicates, so we get 1, 2, 3
       assert length(rows) == 3
-      values = Enum.map(rows, & &1["x"]) |> Enum.sort()
+      values = Enum.map(rows, &elem(&1, 0)) |> Enum.sort()
       assert values == [1, 2, 3]
     end
 
@@ -98,10 +98,12 @@ defmodule DuckdbEx.RelationSetOpsTest do
 
       relation = DuckdbEx.Relation.union(rel1, rel2)
 
-      {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
+      {:ok, result} = DuckdbEx.Relation.execute(relation)
+      rows = DuckdbEx.Result.fetch_all(result)
+
       # DuckDB uses the first relation's column names
       assert length(rows) == 2
-      assert Enum.all?(rows, &Map.has_key?(&1, "x"))
+      assert DuckdbEx.Result.columns(result) == ["x"]
     end
 
     test "union can be chained", %{conn: conn} do
@@ -128,7 +130,7 @@ defmodule DuckdbEx.RelationSetOpsTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
 
       assert length(rows) == 2
-      values = Enum.map(rows, & &1["x"]) |> Enum.sort()
+      values = Enum.map(rows, &elem(&1, 0)) |> Enum.sort()
       assert values == [2, 3]
     end
 
@@ -162,7 +164,7 @@ defmodule DuckdbEx.RelationSetOpsTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
 
       assert length(rows) == 1
-      assert rows == [%{"x" => 1}]
+      assert rows == [{1}]
     end
 
     test "except with identical relations returns empty", %{conn: conn} do
@@ -183,7 +185,7 @@ defmodule DuckdbEx.RelationSetOpsTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
 
       assert length(rows) == 2
-      values = Enum.map(rows, & &1["x"]) |> Enum.sort()
+      values = Enum.map(rows, &elem(&1, 0)) |> Enum.sort()
       assert values == [1, 2]
     end
   end
@@ -202,7 +204,7 @@ defmodule DuckdbEx.RelationSetOpsTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
 
-      values = Enum.map(rows, & &1["x"]) |> Enum.sort()
+      values = Enum.map(rows, &elem(&1, 0)) |> Enum.sort()
       assert values == [2, 3]
     end
   end

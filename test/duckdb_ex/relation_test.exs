@@ -20,7 +20,7 @@ defmodule DuckdbEx.RelationTest do
       # Relation should be lazy - not executed yet
       # Execute when we fetch
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"x" => 1}] = rows
+      assert [{1}] = rows
     end
 
     test "creates relation from more complex query", %{conn: conn} do
@@ -28,7 +28,7 @@ defmodule DuckdbEx.RelationTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 5
-      assert %{"range" => 0} = hd(rows)
+      assert {0} = hd(rows)
     end
   end
 
@@ -43,7 +43,7 @@ defmodule DuckdbEx.RelationTest do
       assert %DuckdbEx.Relation{} = relation
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 2
-      assert %{"id" => 1, "name" => "Alice"} = hd(rows)
+      assert {1, "Alice"} = hd(rows)
     end
 
     test "creates relation from view", %{conn: conn} do
@@ -70,10 +70,8 @@ defmodule DuckdbEx.RelationTest do
         |> DuckdbEx.Relation.project(["x", "y"])
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"x" => 1, "y" => 2}] = rows
-
-      # z should not be present
-      refute Map.has_key?(hd(rows), "z")
+      assert [{1, 2}] = rows
+      assert tuple_size(hd(rows)) == 2
     end
 
     test "projects single column", %{conn: conn} do
@@ -86,8 +84,8 @@ defmodule DuckdbEx.RelationTest do
         |> DuckdbEx.Relation.project(["a"])
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"a" => 1}] = rows
-      assert map_size(hd(rows)) == 1
+      assert [{1}] = rows
+      assert tuple_size(hd(rows)) == 1
     end
 
     test "projects with expressions", %{conn: conn} do
@@ -100,8 +98,8 @@ defmodule DuckdbEx.RelationTest do
         |> DuckdbEx.Relation.project(["upper(name) as upper_name"])
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert %{"upper_name" => "ALICE"} = hd(rows)
-      assert %{"upper_name" => "BOB"} = Enum.at(rows, 1)
+      assert {"ALICE"} = hd(rows)
+      assert {"BOB"} = Enum.at(rows, 1)
     end
 
     test "projects with multiple expressions", %{conn: conn} do
@@ -111,7 +109,7 @@ defmodule DuckdbEx.RelationTest do
         |> DuckdbEx.Relation.project(["x", "x * 2 as double", "x * 3 as triple"])
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"x" => 5, "double" => 10, "triple" => 15}] = rows
+      assert [{5, 10, 15}] = rows
     end
   end
 
@@ -128,7 +126,7 @@ defmodule DuckdbEx.RelationTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # 6, 7, 8, 9
       assert length(rows) == 4
-      assert Enum.all?(rows, fn %{"x" => x} -> x > 5 end)
+      assert Enum.all?(rows, fn {x} -> x > 5 end)
     end
 
     test "chains multiple filters", %{conn: conn} do
@@ -144,7 +142,7 @@ defmodule DuckdbEx.RelationTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # 3, 4, 5, 6, 7
       assert length(rows) == 5
-      assert Enum.all?(rows, fn %{"x" => x} -> x > 2 and x < 8 end)
+      assert Enum.all?(rows, fn {x} -> x > 2 and x < 8 end)
     end
 
     test "filters with complex condition", %{conn: conn} do
@@ -191,6 +189,16 @@ defmodule DuckdbEx.RelationTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert rows == []
     end
+
+    test "supports offset", %{conn: conn} do
+      relation =
+        conn
+        |> DuckdbEx.Connection.sql("SELECT * FROM range(5)")
+        |> DuckdbEx.Relation.limit(2, 1)
+
+      {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
+      assert rows == [{1}, {2}]
+    end
   end
 
   describe "order/2" do
@@ -201,7 +209,7 @@ defmodule DuckdbEx.RelationTest do
         |> DuckdbEx.Relation.order("x ASC")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"x" => 1}, %{"x" => 2}, %{"x" => 3}] = rows
+      assert [{1}, {2}, {3}] = rows
     end
 
     test "orders results descending", %{conn: conn} do
@@ -211,7 +219,7 @@ defmodule DuckdbEx.RelationTest do
         |> DuckdbEx.Relation.order("x DESC")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"x" => 3}, %{"x" => 2}, %{"x" => 1}] = rows
+      assert [{3}, {2}, {1}] = rows
     end
 
     test "orders by multiple columns", %{conn: conn} do
@@ -224,7 +232,45 @@ defmodule DuckdbEx.RelationTest do
         |> DuckdbEx.Relation.order("a ASC, b DESC")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"a" => 1, "b" => 2}, %{"a" => 1, "b" => 1}, %{"a" => 2, "b" => 1}] = rows
+      assert [{1, 2}, {1, 1}, {2, 1}] = rows
+    end
+  end
+
+  describe "sort/2" do
+    test "sorts by a list of columns", %{conn: conn} do
+      relation =
+        conn
+        |> DuckdbEx.Connection.sql("SELECT * FROM (VALUES (3), (1), (2)) t(x)")
+        |> DuckdbEx.Relation.sort(["x"])
+
+      {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
+      assert [{1}, {2}, {3}] = rows
+    end
+
+    test "sorts by a string expression", %{conn: conn} do
+      relation =
+        conn
+        |> DuckdbEx.Connection.sql("SELECT * FROM (VALUES (3), (1), (2)) t(x)")
+        |> DuckdbEx.Relation.sort("x DESC")
+
+      {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
+      assert [{3}, {2}, {1}] = rows
+    end
+  end
+
+  describe "unique/2" do
+    test "selects distinct values for specified columns", %{conn: conn} do
+      DuckdbEx.Connection.execute(conn, "CREATE TABLE test (a INT, b INT)")
+      DuckdbEx.Connection.execute(conn, "INSERT INTO test VALUES (1, 1), (1, 2), (2, 1)")
+
+      relation =
+        conn
+        |> DuckdbEx.Connection.table("test")
+        |> DuckdbEx.Relation.unique("a")
+        |> DuckdbEx.Relation.order("a")
+
+      {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
+      assert rows == [{1}, {2}]
     end
   end
 
@@ -251,7 +297,7 @@ defmodule DuckdbEx.RelationTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 2
-      assert [%{"name" => "Charlie", "age" => 35}, %{"name" => "Eve", "age" => 32}] = rows
+      assert [{"Charlie", 35}, {"Eve", 32}] = rows
     end
 
     test "can reuse base relation", %{conn: conn} do
@@ -281,14 +327,14 @@ defmodule DuckdbEx.RelationTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 5
       assert is_list(rows)
-      assert Enum.all?(rows, &is_map/1)
+      assert Enum.all?(rows, &is_tuple/1)
     end
 
     test "fetch_one/1 returns first row", %{conn: conn} do
       relation = DuckdbEx.Connection.sql(conn, "SELECT * FROM range(5)")
 
       {:ok, row} = DuckdbEx.Relation.fetch_one(relation)
-      assert %{"range" => 0} = row
+      assert {0} = row
     end
 
     test "fetch_one/1 returns nil for empty result", %{conn: conn} do

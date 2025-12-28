@@ -1,7 +1,7 @@
 defmodule DuckdbEx.MixProject do
   use Mix.Project
 
-  @version "0.1.1"
+  @version "0.2.0"
   @source_url "https://github.com/nshkrdotcom/duckdb_ex"
 
   def project do
@@ -16,7 +16,8 @@ defmodule DuckdbEx.MixProject do
       package: package(),
       name: "DuckdbEx",
       source_url: @source_url,
-      homepage_url: @source_url
+      homepage_url: @source_url,
+      dialyzer: [plt_add_apps: [:mix]]
     ]
   end
 
@@ -80,12 +81,38 @@ defmodule DuckdbEx.MixProject do
         "AGENT_PROMPT.md",
         "PROJECT_SUMMARY.md",
         "QUICK_START_CHECKLIST.md",
+        "docs/guides/installation.md",
+        "docs/guides/configuration.md",
+        "docs/guides/connections.md",
+        "docs/guides/relations.md",
+        "docs/guides/data_io.md",
+        "docs/guides/types_expressions.md",
+        "docs/guides/results.md",
+        "docs/guides/errors.md",
+        "docs/guides/performance_limitations.md",
+        "docs/guides/migration_from_python.md",
+        "docs/guides/testing_contributing.md",
         "docs/TECHNICAL_DESIGN.md",
         "docs/IMPLEMENTATION_ROADMAP.md",
         "docs/PYTHON_API_REFERENCE.md"
       ],
       groups_for_extras: [
-        Guides: ["README.md", "CHANGELOG.md", "QUICK_START_CHECKLIST.md"],
+        Guides: [
+          "README.md",
+          "CHANGELOG.md",
+          "QUICK_START_CHECKLIST.md",
+          "docs/guides/installation.md",
+          "docs/guides/configuration.md",
+          "docs/guides/connections.md",
+          "docs/guides/relations.md",
+          "docs/guides/data_io.md",
+          "docs/guides/types_expressions.md",
+          "docs/guides/results.md",
+          "docs/guides/errors.md",
+          "docs/guides/performance_limitations.md",
+          "docs/guides/migration_from_python.md",
+          "docs/guides/testing_contributing.md"
+        ],
         Architecture: [
           "PROJECT_SUMMARY.md",
           "docs/TECHNICAL_DESIGN.md",

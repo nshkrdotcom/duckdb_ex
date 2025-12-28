@@ -42,10 +42,8 @@ IO.puts("✓ 5 employees inserted")
 IO.puts("\n3. SELECT all employees:")
 {:ok, rows} = Connection.fetch_all(conn, "SELECT * FROM employees ORDER BY id")
 
-Enum.each(rows, fn employee ->
-  IO.puts(
-    "  #{employee["id"]}. #{employee["name"]} (#{employee["department"]}) - $#{employee["salary"]}"
-  )
+Enum.each(rows, fn {id, name, department, salary, _hire_date} ->
+  IO.puts("  #{id}. #{name} (#{department}) - $#{salary}")
 end)
 
 # Filter and aggregate
@@ -64,10 +62,8 @@ IO.puts("\n4. Average salary by department:")
     ORDER BY avg_salary DESC
   """)
 
-Enum.each(rows, fn dept ->
-  IO.puts(
-    "  #{dept["department"]}: #{dept["employee_count"]} employees, avg $#{dept["avg_salary"]}"
-  )
+Enum.each(rows, fn {department, employee_count, avg_salary, _min_salary, _max_salary} ->
+  IO.puts("  #{department}: #{employee_count} employees, avg $#{avg_salary}")
 end)
 
 # Update data
@@ -80,10 +76,10 @@ IO.puts("\n5. Giving Alice a raise:")
     WHERE name = 'Alice Johnson'
   """)
 
-{:ok, [employee]} =
+{:ok, [{name, salary}]} =
   Connection.fetch_all(conn, "SELECT name, salary FROM employees WHERE name = 'Alice Johnson'")
 
-IO.puts("✓ #{employee["name"]}'s new salary: $#{employee["salary"]}")
+IO.puts("✓ #{name}'s new salary: $#{salary}")
 
 # Delete data
 IO.puts("\n6. Removing employees hired after 2021:")
@@ -93,8 +89,8 @@ IO.puts("\n6. Removing employees hired after 2021:")
     DELETE FROM employees WHERE hire_date > '2021-01-01'
   """)
 
-{:ok, [result]} = Connection.fetch_all(conn, "SELECT COUNT(*) as remaining FROM employees")
-IO.puts("✓ #{result["remaining"]} employees remaining")
+{:ok, [{remaining}]} = Connection.fetch_all(conn, "SELECT COUNT(*) as remaining FROM employees")
+IO.puts("✓ #{remaining} employees remaining")
 
 # Drop table
 IO.puts("\n7. Cleaning up:")

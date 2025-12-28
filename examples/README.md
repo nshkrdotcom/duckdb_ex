@@ -10,6 +10,12 @@ All examples can be run using `mix run`:
 mix run examples/01_basic_queries.exs
 ```
 
+Ensure the DuckDB CLI is available first:
+
+```bash
+mix duckdb_ex.install
+```
+
 ## Available Examples
 
 ### 1. Basic Queries (`01_basic_queries.exs`)
@@ -65,10 +71,10 @@ mix run examples/04_relations_api.exs
 
 ### 5. File Formats (`05_csv_parquet_json.exs`)
 Reading and writing different file formats:
-- Reading CSV files with `read_csv_auto()`
+- Reading CSV files with `read_csv/2`
 - Exporting to Parquet format
 - Reading Parquet files
-- Exporting to JSON
+- Exporting to JSON via SQL `COPY`
 - Reading JSON files
 - Combining multiple file formats in queries
 
@@ -106,11 +112,7 @@ mix run examples/07_persistent_database.exs
 You can run all examples sequentially:
 
 ```bash
-for example in examples/*.exs; do
-  echo "Running $example..."
-  mix run "$example"
-  echo ""
-done
+examples/run_all.sh
 ```
 
 ## Quick Tips
@@ -130,9 +132,9 @@ done
 ### Query Patterns
 ```elixir
 # Execute and get result
-{:ok, result} = Connection.execute(conn, "SELECT * FROM users")
+{:ok, result} = Connection.execute_result(conn, "SELECT * FROM users")
 
-# Fetch all rows
+# Fetch all rows (tuples)
 {:ok, rows} = Connection.fetch_all(conn, "SELECT * FROM users")
 
 # Fetch one row
@@ -162,7 +164,7 @@ end)
 
 ## Performance Tips
 
-1. **Use prepared statements** (when available) for repeated queries
+1. **Use parameter binding** for repeated queries
 2. **Use transactions** for bulk inserts
 3. **Use Parquet** for analytical workloads (much faster than CSV)
 4. **Use window functions** instead of multiple passes over data

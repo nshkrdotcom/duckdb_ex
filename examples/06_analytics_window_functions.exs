@@ -49,8 +49,8 @@ IO.puts("1. Ranking sales by amount (ROW_NUMBER):")
     LIMIT 5
   """)
 
-Enum.each(rows, fn row ->
-  IO.puts("  ##{row["rank"]}: #{row["product"]} - $#{row["amount"]} (#{row["region"]})")
+Enum.each(rows, fn {rank, product, amount, region} ->
+  IO.puts("  ##{rank}: #{product} - $#{amount} (#{region})")
 end)
 
 # Window function: RANK by category
@@ -75,10 +75,8 @@ IO.puts("\n2. Ranking within each category (RANK):")
     ORDER BY category, rank_in_category
   """)
 
-Enum.each(rows, fn row ->
-  IO.puts(
-    "  #{row["category"]} ##{row["rank_in_category"]}: #{row["product"]} - $#{row["amount"]}"
-  )
+Enum.each(rows, fn {category, product, amount, rank_in_category} ->
+  IO.puts("  #{category} ##{rank_in_category}: #{product} - $#{amount}")
 end)
 
 # Running totals
@@ -95,10 +93,8 @@ IO.puts("\n3. Running total by date:")
     ORDER BY date, id
   """)
 
-Enum.each(rows, fn row ->
-  IO.puts(
-    "  #{row["date"]}: #{row["product"]} ($#{row["amount"]}) - Running total: $#{row["running_total"]}"
-  )
+Enum.each(rows, fn {date, product, amount, running_total} ->
+  IO.puts("  #{date}: #{product} ($#{amount}) - Running total: $#{running_total}")
 end)
 
 # Moving average
@@ -118,8 +114,8 @@ IO.puts("\n4. 3-day moving average:")
     ORDER BY date
   """)
 
-Enum.each(rows, fn row ->
-  IO.puts("  #{row["date"]}: Daily $#{row["daily_total"]}, 3-day avg $#{row["moving_avg_3day"]}")
+Enum.each(rows, fn {date, daily_total, moving_avg_3day} ->
+  IO.puts("  #{date}: Daily $#{daily_total}, 3-day avg $#{moving_avg_3day}")
 end)
 
 # LAG and LEAD
@@ -142,9 +138,9 @@ IO.puts("\n5. Comparing with previous/next day (LAG/LEAD):")
     ORDER BY date
   """)
 
-Enum.each(rows, fn row ->
-  change = if row["change"], do: "$#{row["change"]}", else: "N/A"
-  IO.puts("  #{row["date"]}: $#{row["total"]} (change: #{change})")
+Enum.each(rows, fn {date, total, _prev_day, _next_day, change} ->
+  formatted_change = if change, do: "$#{change}", else: "N/A"
+  IO.puts("  #{date}: $#{total} (change: #{formatted_change})")
 end)
 
 # Percentiles
@@ -162,10 +158,9 @@ IO.puts("\n6. Sales percentiles:")
     LIMIT 5
   """)
 
-Enum.each(rows, fn row ->
-  IO.puts(
-    "  #{row["product"]}: $#{row["amount"]} (Q#{row["quartile"]}, #{Float.round(row["percent_rank"] * 100, 1)}th percentile)"
-  )
+Enum.each(rows, fn {product, amount, quartile, percent_rank} ->
+  percentile = Float.round(percent_rank * 100, 1)
+  IO.puts("  #{product}: $#{amount} (Q#{quartile}, #{percentile}th percentile)")
 end)
 
 # Regional analysis
@@ -184,9 +179,9 @@ IO.puts("\n7. Regional performance:")
     ORDER BY total_sales DESC
   """)
 
-Enum.each(rows, fn row ->
+Enum.each(rows, fn {region, num_sales, total_sales, avg_sale, sales_rank} ->
   IO.puts(
-    "  ##{row["sales_rank"]} #{row["region"]}: #{row["num_sales"]} sales, $#{row["total_sales"]} total, $#{row["avg_sale"]} avg"
+    "  ##{sales_rank} #{region}: #{num_sales} sales, $#{total_sales} total, $#{avg_sale} avg"
   )
 end)
 

@@ -11,14 +11,14 @@ IO.puts("✓ Connected to in-memory database")
 
 # Simple SELECT
 IO.puts("\n1. Simple SELECT:")
-{:ok, result} = Connection.execute(conn, "SELECT 1 as num, 'hello' as text")
-IO.inspect(result.rows, label: "Result")
+{:ok, rows} = Connection.fetch_all(conn, "SELECT 1 as num, 'hello' as text")
+IO.inspect(rows, label: "Result")
 
 # Math operations
 IO.puts("\n2. Math operations:")
 
-{:ok, result} =
-  Connection.execute(conn, """
+{:ok, rows} =
+  Connection.fetch_all(conn, """
     SELECT
       42 + 8 as addition,
       100 - 25 as subtraction,
@@ -27,13 +27,13 @@ IO.puts("\n2. Math operations:")
       2 ^ 10 as power
   """)
 
-IO.inspect(result.rows, label: "Math results")
+IO.inspect(rows, label: "Math results")
 
 # String operations
 IO.puts("\n3. String operations:")
 
-{:ok, result} =
-  Connection.execute(conn, """
+{:ok, rows} =
+  Connection.fetch_all(conn, """
     SELECT
       UPPER('hello world') as uppercase,
       LOWER('HELLO WORLD') as lowercase,
@@ -41,13 +41,13 @@ IO.puts("\n3. String operations:")
       LENGTH('DuckDB') as length
   """)
 
-IO.inspect(result.rows, label: "String operations")
+IO.inspect(rows, label: "String operations")
 
 # Date and time
 IO.puts("\n4. Date and time:")
 
-{:ok, result} =
-  Connection.execute(conn, """
+{:ok, rows} =
+  Connection.fetch_all(conn, """
     SELECT
       CURRENT_DATE as today,
       CURRENT_TIME as now,
@@ -55,13 +55,13 @@ IO.puts("\n4. Date and time:")
       DATE '2024-01-15' + INTERVAL '7 days' as week_later
   """)
 
-IO.inspect(result.rows, label: "Date/time")
+IO.inspect(rows, label: "Date/time")
 
 # Aggregations
 IO.puts("\n5. Aggregations:")
 
-{:ok, result} =
-  Connection.execute(conn, """
+{:ok, rows} =
+  Connection.fetch_all(conn, """
     SELECT
       COUNT(*) as count,
       SUM(value) as sum,
@@ -71,7 +71,7 @@ IO.puts("\n5. Aggregations:")
     FROM (VALUES (1), (2), (3), (4), (5)) as t(value)
   """)
 
-IO.inspect(result.rows, label: "Aggregations")
+IO.inspect(rows, label: "Aggregations")
 
 Connection.close(conn)
 IO.puts("\n✓ Connection closed")

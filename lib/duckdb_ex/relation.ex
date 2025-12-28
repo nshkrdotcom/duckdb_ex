@@ -46,15 +46,18 @@ defmodule DuckdbEx.Relation do
   """
 
   alias DuckdbEx.Connection
+  alias DuckdbEx.Exceptions
+  alias DuckdbEx.Parameters
   alias DuckdbEx.Result
 
   @type t :: %__MODULE__{
           conn: Connection.t(),
           sql: String.t(),
-          alias: String.t() | nil
+          alias: String.t() | nil,
+          source: term()
         }
 
-  defstruct [:conn, :sql, :alias]
+  defstruct [:conn, :sql, :alias, :source]
 
   @doc """
   Creates a new relation.
@@ -72,12 +75,13 @@ defmodule DuckdbEx.Relation do
 
   A new `%DuckdbEx.Relation{}` struct
   """
-  @spec new(Connection.t(), String.t(), String.t() | nil) :: t()
-  def new(conn, sql, relation_alias \\ nil) do
+  @spec new(Connection.t(), String.t(), String.t() | nil, term()) :: t()
+  def new(conn, sql, relation_alias \\ nil, source \\ nil) do
     %__MODULE__{
       conn: conn,
       sql: sql,
-      alias: relation_alias
+      alias: relation_alias,
+      source: source
     }
   end
 
@@ -110,7 +114,7 @@ defmodule DuckdbEx.Relation do
     columns_str = Enum.join(columns, ", ")
     new_sql = "SELECT #{columns_str} FROM (#{sql}) AS _projection"
 
-    %{relation | sql: new_sql}
+    derived_relation(relation, new_sql)
   end
 
   @doc """
@@ -148,7 +152,7 @@ defmodule DuckdbEx.Relation do
   def filter(%__MODULE__{sql: sql} = relation, condition) when is_binary(condition) do
     new_sql = "SELECT * FROM (#{sql}) AS _filter WHERE #{condition}"
 
-    %{relation | sql: new_sql}
+    derived_relation(relation, new_sql)
   end
 
   @doc """
@@ -161,11 +165,15 @@ defmodule DuckdbEx.Relation do
 
   - `relation` - The relation to limit
   - `n` - Maximum number of rows to return
+  - `offset` - Number of rows to skip before returning results (default: 0)
 
   ## Examples
 
       # Get first 10 rows
       relation |> DuckdbEx.Relation.limit(10)
+
+      # Skip the first 5 rows
+      relation |> DuckdbEx.Relation.limit(10, 5)
 
       # Combine with order for top-N queries
       relation
@@ -174,11 +182,17 @@ defmodule DuckdbEx.Relation do
 
   Reference: DuckDBPyRelation.limit() in Python
   """
-  @spec limit(t(), non_neg_integer()) :: t()
-  def limit(%__MODULE__{sql: sql} = relation, n) when is_integer(n) and n >= 0 do
-    new_sql = "SELECT * FROM (#{sql}) AS _limit LIMIT #{n}"
+  @spec limit(t(), non_neg_integer(), non_neg_integer()) :: t()
+  def limit(%__MODULE__{sql: sql} = relation, n, offset \\ 0)
+      when is_integer(n) and n >= 0 and is_integer(offset) and offset >= 0 do
+    new_sql =
+      if offset > 0 do
+        "SELECT * FROM (#{sql}) AS _limit LIMIT #{n} OFFSET #{offset}"
+      else
+        "SELECT * FROM (#{sql}) AS _limit LIMIT #{n}"
+      end
 
-    %{relation | sql: new_sql}
+    derived_relation(relation, new_sql)
   end
 
   @doc """
@@ -212,7 +226,22 @@ defmodule DuckdbEx.Relation do
   def order(%__MODULE__{sql: sql} = relation, order_by) when is_binary(order_by) do
     new_sql = "SELECT * FROM (#{sql}) AS _order ORDER BY #{order_by}"
 
-    %{relation | sql: new_sql}
+    derived_relation(relation, new_sql)
+  end
+
+  @doc """
+  Sorts rows by one or more columns.
+
+  This is an alias for `order/2`, accepting either a list of column expressions
+  or a single ORDER BY string.
+  """
+  @spec sort(t(), String.t() | list(String.t())) :: t()
+  def sort(%__MODULE__{} = relation, columns) when is_list(columns) do
+    order(relation, Enum.join(columns, ", "))
+  end
+
+  def sort(%__MODULE__{} = relation, columns) when is_binary(columns) do
+    order(relation, columns)
   end
 
   @doc """
@@ -238,13 +267,13 @@ defmodule DuckdbEx.Relation do
   """
   @spec execute(t()) :: {:ok, term()} | {:error, term()}
   def execute(%__MODULE__{conn: conn, sql: sql}) do
-    Connection.execute(conn, sql)
+    Connection.execute_result(conn, sql)
   end
 
   @doc """
   Fetches all rows from the relation.
 
-  Executes the relation query and returns all rows as a list of maps.
+  Executes the relation query and returns all rows as a list of tuples.
 
   ## Parameters
 
@@ -252,19 +281,19 @@ defmodule DuckdbEx.Relation do
 
   ## Returns
 
-  - `{:ok, rows}` - List of row maps
+  - `{:ok, rows}` - List of row tuples
   - `{:error, exception}` - Execution failed
 
   ## Examples
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      # => [%{"id" => 1, "name" => "Alice"}, ...]
+      # => [{1, "Alice"}, ...]
 
   Reference: DuckDBPyRelation.fetchall() in Python
   """
-  @spec fetch_all(t()) :: {:ok, list(map())} | {:error, term()}
+  @spec fetch_all(t()) :: {:ok, list(tuple())} | {:error, term()}
   def fetch_all(%__MODULE__{conn: conn, sql: sql}) do
-    case Connection.execute(conn, sql) do
+    case Connection.execute_result(conn, sql) do
       {:ok, result} -> {:ok, Result.fetch_all(result)}
       error -> error
     end
@@ -282,22 +311,22 @@ defmodule DuckdbEx.Relation do
 
   ## Returns
 
-  - `{:ok, row}` - Row map or nil if empty
+  - `{:ok, row}` - Row tuple or nil if empty
   - `{:error, exception}` - Execution failed
 
   ## Examples
 
       {:ok, row} = DuckdbEx.Relation.fetch_one(relation)
-      # => %{"id" => 1, "name" => "Alice"}
+      # => {1, "Alice"}
 
       # Empty result
       {:ok, nil} = DuckdbEx.Relation.fetch_one(empty_relation)
 
   Reference: DuckDBPyRelation.fetchone() in Python
   """
-  @spec fetch_one(t()) :: {:ok, map() | nil} | {:error, term()}
+  @spec fetch_one(t()) :: {:ok, tuple() | nil} | {:error, term()}
   def fetch_one(%__MODULE__{conn: conn, sql: sql}) do
-    case Connection.execute(conn, sql) do
+    case Connection.execute_result(conn, sql) do
       {:ok, result} -> {:ok, Result.fetch_one(result)}
       error -> error
     end
@@ -315,23 +344,50 @@ defmodule DuckdbEx.Relation do
 
   ## Returns
 
-  - `{:ok, rows}` - List of row maps (up to N rows)
+  - `{:ok, rows}` - List of row tuples (up to N rows)
   - `{:error, exception}` - Execution failed
 
   ## Examples
 
       {:ok, rows} = DuckdbEx.Relation.fetch_many(relation, 5)
-      # => [%{"id" => 1}, %{"id" => 2}, ...]
+      # => [{1}, {2}, ...]
 
   Reference: DuckDBPyRelation.fetchmany() in Python
   """
-  @spec fetch_many(t(), pos_integer()) :: {:ok, list(map())} | {:error, term()}
+  @spec fetch_many(t(), pos_integer()) :: {:ok, list(tuple())} | {:error, term()}
   def fetch_many(%__MODULE__{conn: conn, sql: sql}, n) when is_integer(n) and n > 0 do
     limited_sql = "SELECT * FROM (#{sql}) AS _fetch_many LIMIT #{n}"
 
-    case Connection.execute(conn, limited_sql) do
+    case Connection.execute_result(conn, limited_sql) do
       {:ok, result} -> {:ok, Result.fetch_all(result)}
       error -> error
+    end
+  end
+
+  @doc """
+  Exports the relation to a CSV file.
+  """
+  @spec to_csv(t(), String.t(), keyword() | map()) :: :ok | {:error, term()}
+  def to_csv(%__MODULE__{conn: conn, sql: sql}, filename, opts \\ []) when is_binary(filename) do
+    copy_sql = build_copy_sql(sql, filename, "CSV", opts)
+
+    case Connection.execute(conn, copy_sql) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Exports the relation to a Parquet file.
+  """
+  @spec to_parquet(t(), String.t(), keyword() | map()) :: :ok | {:error, term()}
+  def to_parquet(%__MODULE__{conn: conn, sql: sql}, filename, opts \\ [])
+      when is_binary(filename) do
+    copy_sql = build_copy_sql(sql, filename, "PARQUET", opts)
+
+    case Connection.execute(conn, copy_sql) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
     end
   end
 
@@ -400,7 +456,7 @@ defmodule DuckdbEx.Relation do
         "SELECT #{group_cols}, #{agg_str} FROM (#{sql}) AS _aggregate GROUP BY #{group_cols}"
       end
 
-    %{relation | sql: new_sql}
+    derived_relation(relation, new_sql)
   end
 
   def aggregate(%__MODULE__{} = relation, expression, opts) when is_binary(expression) do
@@ -570,7 +626,21 @@ defmodule DuckdbEx.Relation do
   @spec distinct(t()) :: t()
   def distinct(%__MODULE__{sql: sql} = relation) do
     new_sql = "SELECT DISTINCT * FROM (#{sql}) AS _distinct"
-    %{relation | sql: new_sql}
+    derived_relation(relation, new_sql)
+  end
+
+  @doc """
+  Returns distinct values for the specified columns.
+  """
+  @spec unique(t(), String.t() | list(String.t())) :: t()
+  def unique(%__MODULE__{} = relation, columns) when is_list(columns) do
+    relation
+    |> project(columns)
+    |> distinct()
+  end
+
+  def unique(%__MODULE__{} = relation, columns) when is_binary(columns) do
+    unique(relation, [columns])
   end
 
   @doc """
@@ -610,7 +680,7 @@ defmodule DuckdbEx.Relation do
   @spec union(t(), t()) :: t()
   def union(%__MODULE__{conn: conn, sql: sql1}, %__MODULE__{sql: sql2}) do
     new_sql = "(#{sql1}) UNION (#{sql2})"
-    %__MODULE__{conn: conn, sql: new_sql, alias: nil}
+    %__MODULE__{conn: conn, sql: new_sql, alias: nil, source: :query}
   end
 
   @doc """
@@ -645,7 +715,7 @@ defmodule DuckdbEx.Relation do
   @spec intersect(t(), t()) :: t()
   def intersect(%__MODULE__{conn: conn, sql: sql1}, %__MODULE__{sql: sql2}) do
     new_sql = "(#{sql1}) INTERSECT (#{sql2})"
-    %__MODULE__{conn: conn, sql: new_sql, alias: nil}
+    %__MODULE__{conn: conn, sql: new_sql, alias: nil, source: :query}
   end
 
   @doc """
@@ -683,7 +753,7 @@ defmodule DuckdbEx.Relation do
   @spec except_(t(), t()) :: t()
   def except_(%__MODULE__{conn: conn, sql: sql1}, %__MODULE__{sql: sql2}) do
     new_sql = "(#{sql1}) EXCEPT (#{sql2})"
-    %__MODULE__{conn: conn, sql: new_sql, alias: nil}
+    %__MODULE__{conn: conn, sql: new_sql, alias: nil, source: :query}
   end
 
   @doc """
@@ -754,7 +824,7 @@ defmodule DuckdbEx.Relation do
     ON #{condition}
     """
 
-    %__MODULE__{conn: conn, sql: String.trim(new_sql), alias: nil}
+    %__MODULE__{conn: conn, sql: String.trim(new_sql), alias: nil, source: :query}
   end
 
   # Extract table names from a join condition like "users.id = orders.user_id"
@@ -802,6 +872,297 @@ defmodule DuckdbEx.Relation do
     SELECT * FROM (#{sql1}) CROSS JOIN (#{sql2})
     """
 
-    %__MODULE__{conn: conn, sql: String.trim(new_sql), alias: nil}
+    %__MODULE__{conn: conn, sql: String.trim(new_sql), alias: nil, source: :query}
+  end
+
+  @doc """
+  Creates a table from the relation.
+  """
+  @spec create(t(), String.t()) :: :ok | {:error, term()}
+  def create(%__MODULE__{conn: conn, sql: sql}, table_name) when is_binary(table_name) do
+    create_sql = "CREATE TABLE #{table_name} AS #{sql}"
+
+    case Connection.execute(conn, create_sql) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Alias for create/2.
+  """
+  @spec to_table(t(), String.t()) :: :ok | {:error, term()}
+  def to_table(%__MODULE__{} = relation, table_name) do
+    create(relation, table_name)
+  end
+
+  @doc """
+  Creates a view from the relation.
+  """
+  @spec create_view(t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def create_view(%__MODULE__{conn: conn, sql: sql}, view_name, opts \\ [])
+      when is_binary(view_name) do
+    replace = Keyword.get(opts, :replace, true)
+    prefix = if replace, do: "CREATE OR REPLACE VIEW", else: "CREATE VIEW"
+    create_sql = "#{prefix} #{view_name} AS #{sql}"
+
+    case Connection.execute(conn, create_sql) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Alias for create_view/3.
+  """
+  @spec to_view(t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def to_view(%__MODULE__{} = relation, view_name, opts \\ []) do
+    create_view(relation, view_name, opts)
+  end
+
+  @doc """
+  Inserts rows from the relation into an existing table.
+  """
+  @spec insert_into(t(), String.t()) :: :ok | {:error, term()}
+  def insert_into(%__MODULE__{conn: conn, sql: sql}, table_name) when is_binary(table_name) do
+    insert_sql = "INSERT INTO #{table_name} SELECT * FROM (#{sql}) AS _insert_into"
+
+    case Connection.execute(conn, insert_sql) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Inserts a row of values into a table relation.
+  """
+  @spec insert(t(), list() | tuple() | term()) :: :ok | {:error, term()}
+  def insert(%__MODULE__{source: {:table, table_name}} = relation, values) do
+    insert_sql = "INSERT INTO #{table_name} VALUES (#{encode_values_row(values)})"
+
+    case Connection.execute(relation.conn, insert_sql) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  def insert(%__MODULE__{}, _values) do
+    raise Exceptions.InvalidInputException,
+      message: "'DuckDBPyRelation.insert' can only be used on a table relation"
+  end
+
+  @doc """
+  Updates rows in a table relation.
+  """
+  @spec update(t(), map(), String.t() | nil) :: :ok | {:error, term()}
+  def update(relation, set, condition \\ nil)
+
+  def update(%__MODULE__{source: {:table, table_name}} = relation, set, condition) do
+    set_clause = build_update_set_clause(set)
+
+    where_sql =
+      cond do
+        condition in [nil, ""] ->
+          ""
+
+        is_binary(condition) ->
+          " WHERE #{condition}"
+
+        true ->
+          raise Exceptions.InvalidInputException,
+            message: "Please provide an Expression to 'condition'"
+      end
+
+    update_sql = "UPDATE #{table_name} SET #{set_clause}#{where_sql}"
+
+    case Connection.execute(relation.conn, update_sql) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  def update(%__MODULE__{}, _set, _condition) do
+    raise Exceptions.InvalidInputException,
+      message: "'DuckDBPyRelation.update' can only be used on a table relation"
+  end
+
+  defp build_copy_sql(sql, filename, format, opts) do
+    options_sql = build_copy_options(format, opts)
+    "COPY (#{sql}) TO #{Parameters.encode(filename)}#{options_sql}"
+  end
+
+  defp build_copy_options(format, opts) do
+    opts = normalize_opts(opts)
+    entries = ["FORMAT #{format}"] ++ copy_option_entries(format, opts)
+    " (" <> Enum.join(entries, ", ") <> ")"
+  end
+
+  defp copy_option_entries("CSV", opts) do
+    validate_copy_csv_opts!(opts)
+
+    opts
+    |> Enum.flat_map(&copy_option_entry_csv/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp copy_option_entries("PARQUET", opts) do
+    opts
+    |> Enum.flat_map(&copy_option_entry_parquet/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp copy_option_entries(_format, _opts), do: []
+
+  defp copy_option_entry_csv({key, value}) do
+    case normalize_copy_key(key) do
+      "sep" -> ["DELIMITER #{encode_copy_value(value)}"]
+      "delimiter" -> ["DELIMITER #{encode_copy_value(value)}"]
+      "header" -> ["HEADER #{encode_copy_value(value)}"]
+      "na_rep" -> ["NULL #{encode_copy_value(value)}"]
+      "quotechar" -> ["QUOTE #{encode_copy_value(value)}"]
+      "escapechar" -> ["ESCAPE #{encode_copy_value(value)}"]
+      "date_format" -> ["DATEFORMAT #{encode_copy_value(value)}"]
+      "timestamp_format" -> ["TIMESTAMPFORMAT #{encode_copy_value(value)}"]
+      "compression" -> ["COMPRESSION #{encode_copy_value(value)}"]
+      "partition_by" -> ["PARTITION_BY (#{format_partition_by(value)})"]
+      "write_partition_columns" -> ["WRITE_PARTITION_COLUMNS #{encode_copy_value(value)}"]
+      "overwrite" -> ["OVERWRITE #{encode_copy_value(value)}"]
+      "per_thread_output" -> ["PER_THREAD_OUTPUT #{encode_copy_value(value)}"]
+      "use_tmp_file" -> ["USE_TMP_FILE #{encode_copy_value(value)}"]
+      "quoting" -> []
+      _ -> ["#{String.upcase(to_string(key))} #{encode_copy_value(value)}"]
+    end
+  end
+
+  defp copy_option_entry_parquet({key, value}) do
+    case normalize_copy_key(key) do
+      "compression" -> ["COMPRESSION #{encode_copy_value(value)}"]
+      "row_group_size" -> ["ROW_GROUP_SIZE #{encode_copy_value(value)}"]
+      "row_group_size_bytes" -> ["ROW_GROUP_SIZE_BYTES #{encode_copy_value(value)}"]
+      "partition_by" -> ["PARTITION_BY (#{format_partition_by(value)})"]
+      "write_partition_columns" -> ["WRITE_PARTITION_COLUMNS #{encode_copy_value(value)}"]
+      "overwrite" -> ["OVERWRITE #{encode_copy_value(value)}"]
+      "append" -> ["APPEND #{encode_copy_value(value)}"]
+      "per_thread_output" -> ["PER_THREAD_OUTPUT #{encode_copy_value(value)}"]
+      "use_tmp_file" -> ["USE_TMP_FILE #{encode_copy_value(value)}"]
+      "filename_pattern" -> ["FILENAME_PATTERN #{encode_copy_value(value)}"]
+      "file_size_bytes" -> ["FILE_SIZE_BYTES #{encode_copy_value(value)}"]
+      "field_ids" -> ["FIELD_IDS #{encode_copy_value(value)}"]
+      _ -> ["#{String.upcase(to_string(key))} #{encode_copy_value(value)}"]
+    end
+  end
+
+  defp normalize_opts(nil), do: []
+
+  defp normalize_opts(opts) when is_list(opts) do
+    Enum.map(opts, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp normalize_opts(opts) when is_map(opts) do
+    Enum.map(opts, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp normalize_copy_key(key) do
+    key
+    |> to_string()
+    |> String.downcase()
+  end
+
+  defp encode_copy_value(value) do
+    Parameters.encode(value)
+  end
+
+  defp format_partition_by(value) when is_list(value) do
+    Enum.map_join(value, ", ", &quote_identifier/1)
+  end
+
+  defp format_partition_by(value) do
+    quote_identifier(value)
+  end
+
+  defp quote_identifier(name) when is_atom(name) do
+    quote_identifier(Atom.to_string(name))
+  end
+
+  defp quote_identifier(name) when is_binary(name) do
+    if Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, name) do
+      name
+    else
+      "\"" <> String.replace(name, "\"", "\"\"") <> "\""
+    end
+  end
+
+  defp validate_copy_csv_opts!(opts) do
+    has_delimiter = Enum.any?(opts, fn {key, _} -> normalize_copy_key(key) == "delimiter" end)
+    has_sep = Enum.any?(opts, fn {key, _} -> normalize_copy_key(key) == "sep" end)
+
+    if has_delimiter and has_sep do
+      raise Exceptions.InvalidInputException,
+        message: "to_csv takes either 'delimiter' or 'sep', not both"
+    end
+
+    :ok
+  end
+
+  defp derived_relation(%__MODULE__{} = relation, new_sql) do
+    %{relation | sql: new_sql, source: :query}
+  end
+
+  defp build_update_set_clause(set) when is_map(set) do
+    entries = Map.to_list(set)
+
+    if entries == [] do
+      raise Exceptions.InvalidInputException,
+        message: "Please provide at least one set expression"
+    end
+
+    entries
+    |> Enum.map_join(", ", fn {key, value} ->
+      column = normalize_column_key(key)
+      "#{column} = #{encode_update_value(value)}"
+    end)
+  end
+
+  defp build_update_set_clause(_set) do
+    raise Exceptions.InvalidInputException,
+      message: "Please provide 'set' as a dictionary of column name to Expression"
+  end
+
+  defp normalize_column_key(key) when is_binary(key), do: quote_identifier(key)
+  defp normalize_column_key(key) when is_atom(key), do: quote_identifier(Atom.to_string(key))
+
+  defp normalize_column_key(_key) do
+    raise Exceptions.InvalidInputException,
+      message: "Please provide the column name as the key of the dictionary"
+  end
+
+  defp encode_update_value(value) do
+    Parameters.encode(value)
+  end
+
+  defp encode_values_row(values) do
+    values
+    |> normalize_values_row()
+    |> Enum.map_join(", ", &Parameters.encode/1)
+  end
+
+  defp normalize_values_row(values) when is_list(values) do
+    values
+  end
+
+  defp normalize_values_row(values) when is_tuple(values) do
+    values
+    |> Tuple.to_list()
+    |> case do
+      [] ->
+        raise Exceptions.InvalidInputException, message: "Please provide a non-empty tuple"
+
+      list ->
+        list
+    end
+  end
+
+  defp normalize_values_row(value) do
+    [value]
   end
 end

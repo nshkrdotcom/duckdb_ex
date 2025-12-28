@@ -8,11 +8,11 @@ alias DuckdbEx.Connection
 {:ok, conn} = Connection.connect(:memory)
 IO.puts("✓ Connected to DuckDB!")
 
-# Execute a simple query
-{:ok, result} = Connection.execute(conn, "SELECT 'Hello from DuckDB!' as message")
+# Execute a simple query and fetch rows
+{:ok, rows} = Connection.fetch_all(conn, "SELECT 'Hello from DuckDB!' as message")
 
 # Print the result
-IO.inspect(result.rows, label: "Query result")
+IO.inspect(rows, label: "Query result")
 
 # Clean up
 Connection.close(conn)

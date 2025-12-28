@@ -23,3 +23,6 @@ duckdb_ex-*.tar
 /tmp/
 
 /duckdb-python/
+
+# Installed DuckDB CLI (mix duckdb_ex.install)
+/priv/duckdb/

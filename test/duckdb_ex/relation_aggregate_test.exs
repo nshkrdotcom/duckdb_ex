@@ -17,7 +17,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.aggregate("count(*) as total")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"total" => 10}] = rows
+      assert [{10}] = rows
     end
 
     test "sum aggregation", %{conn: conn} do
@@ -28,7 +28,7 @@ defmodule DuckdbEx.RelationAggregateTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # 0 + 1 + 2 + 3 + 4 = 10
-      assert [%{"total" => 10}] = rows
+      assert [{10}] = rows
     end
 
     test "avg aggregation", %{conn: conn} do
@@ -39,7 +39,7 @@ defmodule DuckdbEx.RelationAggregateTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # (0 + 1 + 2 + 3 + 4) / 5 = 2.0
-      assert [%{"average" => 2.0}] = rows
+      assert [{2.0}] = rows
     end
 
     test "min aggregation", %{conn: conn} do
@@ -52,7 +52,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.aggregate("min(value) as minimum")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"minimum" => 1}] = rows
+      assert [{1}] = rows
     end
 
     test "max aggregation", %{conn: conn} do
@@ -65,7 +65,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.aggregate("max(value) as maximum")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"maximum" => 9}] = rows
+      assert [{9}] = rows
     end
 
     test "count distinct", %{conn: conn} do
@@ -78,7 +78,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.aggregate("count(distinct value) as unique_count")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"unique_count" => 3}] = rows
+      assert [{3}] = rows
     end
   end
 
@@ -97,15 +97,7 @@ defmodule DuckdbEx.RelationAggregateTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
 
-      assert [
-               %{
-                 "count" => 10,
-                 "total" => 45,
-                 "average" => 4.5,
-                 "minimum" => 0,
-                 "maximum" => 9
-               }
-             ] = rows
+      assert [{10, 45, 4.5, 0, 9}] = rows
     end
 
     test "aggregates with expressions", %{conn: conn} do
@@ -126,7 +118,7 @@ defmodule DuckdbEx.RelationAggregateTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # 10*5 + 20*3 + 15*4 = 50 + 60 + 60 = 170
-      assert [%{"total_quantity" => 45, "total_revenue" => revenue}] = rows
+      assert [{45, revenue}] = rows
       assert_in_delta revenue, 170.0, 0.01
     end
   end
@@ -163,13 +155,13 @@ defmodule DuckdbEx.RelationAggregateTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 2
 
-      electronics = Enum.find(rows, &(&1["category"] == "Electronics"))
-      furniture = Enum.find(rows, &(&1["category"] == "Furniture"))
+      electronics = Enum.find(rows, fn {category, _total} -> category == "Electronics" end)
+      furniture = Enum.find(rows, fn {category, _total} -> category == "Furniture" end)
 
       # Laptop(1000) + Mouse(50) + Keyboard(100) = 1150
-      assert electronics["total"] == 1150
+      assert elem(electronics, 1) == 1150
       # Desk(300) + Chair(200) = 500
-      assert furniture["total"] == 500
+      assert elem(furniture, 1) == 500
     end
 
     test "group by multiple columns", %{conn: conn} do
@@ -195,8 +187,10 @@ defmodule DuckdbEx.RelationAggregateTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 4
 
-      north_2023 = Enum.find(rows, &(&1["region"] == "North" and &1["year"] == 2023))
-      assert north_2023["total"] == 300
+      north_2023 =
+        Enum.find(rows, fn {region, year, _total} -> region == "North" and year == 2023 end)
+
+      assert elem(north_2023, 2) == 300
     end
 
     test "group by with multiple aggregations", %{conn: conn} do
@@ -216,11 +210,13 @@ defmodule DuckdbEx.RelationAggregateTest do
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       assert length(rows) == 2
 
-      electronics = Enum.find(rows, &(&1["category"] == "Electronics"))
-      assert electronics["count"] == 3
-      assert electronics["total_amount"] == 1150
-      assert_in_delta electronics["avg_amount"], 383.33, 0.1
-      assert electronics["total_quantity"] == 27
+      electronics =
+        Enum.find(rows, fn {category, _count, _total, _avg, _qty} -> category == "Electronics" end)
+
+      assert elem(electronics, 1) == 3
+      assert elem(electronics, 2) == 1150
+      assert_in_delta elem(electronics, 3), 383.33, 0.1
+      assert elem(electronics, 4) == 27
     end
 
     test "group by with filter", %{conn: conn} do
@@ -232,13 +228,13 @@ defmodule DuckdbEx.RelationAggregateTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
 
-      electronics = Enum.find(rows, &(&1["category"] == "Electronics"))
-      furniture = Enum.find(rows, &(&1["category"] == "Furniture"))
+      electronics = Enum.find(rows, fn {category, _total} -> category == "Electronics" end)
+      furniture = Enum.find(rows, fn {category, _total} -> category == "Furniture" end)
 
       # Only Laptop(1000) for Electronics (Mouse and Keyboard filtered out)
-      assert electronics["total"] == 1000
+      assert elem(electronics, 1) == 1000
       # Desk(300) + Chair(200) = 500
-      assert furniture["total"] == 500
+      assert elem(furniture, 1) == 500
     end
 
     test "group by with order", %{conn: conn} do
@@ -252,8 +248,8 @@ defmodule DuckdbEx.RelationAggregateTest do
       assert length(rows) == 2
 
       # Electronics should be first (1150 > 500)
-      assert hd(rows)["category"] == "Electronics"
-      assert hd(rows)["total"] == 1150
+      assert elem(hd(rows), 0) == "Electronics"
+      assert elem(hd(rows), 1) == 1150
     end
   end
 
@@ -283,7 +279,7 @@ defmodule DuckdbEx.RelationAggregateTest do
       # A: 350, B: 700, C: 30
       # Only A and B have total > 200
       assert length(rows) == 2
-      assert Enum.all?(rows, fn row -> row["total"] > 200 end)
+      assert Enum.all?(rows, fn {_category, total} -> total > 200 end)
     end
   end
 
@@ -295,7 +291,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.count()
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"count" => 10}] = rows
+      assert [{10}] = rows
     end
 
     test "sum/2 convenience method", %{conn: conn} do
@@ -305,7 +301,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.sum("range")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"sum" => 10}] = rows
+      assert [{10}] = rows
     end
 
     test "avg/2 convenience method", %{conn: conn} do
@@ -315,7 +311,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.avg("range")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"avg" => 2.0}] = rows
+      assert [{2.0}] = rows
     end
 
     test "min/2 convenience method", %{conn: conn} do
@@ -328,7 +324,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.min("value")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"min" => 2}] = rows
+      assert [{2}] = rows
     end
 
     test "max/2 convenience method", %{conn: conn} do
@@ -341,7 +337,7 @@ defmodule DuckdbEx.RelationAggregateTest do
         |> DuckdbEx.Relation.max("value")
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
-      assert [%{"max" => 8}] = rows
+      assert [{8}] = rows
     end
   end
 
@@ -354,7 +350,7 @@ defmodule DuckdbEx.RelationAggregateTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # Standard deviation of 1-10 is approximately 2.87
-      assert [%{"stddev" => stddev}] = rows
+      assert [{stddev}] = rows
       assert_in_delta stddev, 2.87, 0.1
     end
 
@@ -366,7 +362,7 @@ defmodule DuckdbEx.RelationAggregateTest do
 
       {:ok, rows} = DuckdbEx.Relation.fetch_all(relation)
       # Variance of 1-10 is approximately 8.25
-      assert [%{"variance" => variance}] = rows
+      assert [{variance}] = rows
       assert_in_delta variance, 8.25, 0.1
     end
   end
@@ -400,7 +396,7 @@ defmodule DuckdbEx.RelationAggregateTest do
       # B: 300+400 = 700 (included)
       # C: none above 50
       assert length(rows) == 1
-      assert [%{"category" => "B", "total" => 700}] = rows
+      assert [{"B", 700}] = rows
     end
   end
 end

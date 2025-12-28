@@ -45,8 +45,8 @@ IO.puts("\n2. Filter electronics:")
   |> Relation.filter("category = 'Electronics'")
   |> Relation.fetch_all()
 
-Enum.each(electronics, fn product ->
-  IO.puts("  - #{product["name"]}: $#{product["price"]}")
+Enum.each(electronics, fn {_id, name, _category, price, _stock} ->
+  IO.puts("  - #{name}: $#{price}")
 end)
 
 # Example 3: Multiple filters
@@ -58,8 +58,8 @@ IO.puts("\n3. Expensive electronics (price > $100):")
   |> Relation.filter("price > 100")
   |> Relation.fetch_all()
 
-Enum.each(expensive_electronics, fn product ->
-  IO.puts("  - #{product["name"]}: $#{product["price"]}")
+Enum.each(expensive_electronics, fn {_id, name, _category, price, _stock} ->
+  IO.puts("  - #{name}: $#{price}")
 end)
 
 # Example 4: Projection (select specific columns)
@@ -71,8 +71,8 @@ IO.puts("\n4. Product names and prices only:")
   |> Relation.limit(3)
   |> Relation.fetch_all()
 
-Enum.each(name_price, fn product ->
-  IO.puts("  - #{product["name"]}: $#{product["price"]}")
+Enum.each(name_price, fn {name, price} ->
+  IO.puts("  - #{name}: $#{price}")
 end)
 
 # Example 5: Ordering
@@ -84,8 +84,8 @@ IO.puts("\n5. Products by price (desc):")
   |> Relation.limit(3)
   |> Relation.fetch_all()
 
-Enum.each(by_price, fn product ->
-  IO.puts("  - #{product["name"]}: $#{product["price"]}")
+Enum.each(by_price, fn {_id, name, _category, price, _stock} ->
+  IO.puts("  - #{name}: $#{price}")
 end)
 
 # Example 6: Aggregation
@@ -99,10 +99,8 @@ IO.puts("\n6. Aggregate by category:")
   )
   |> Relation.fetch_all()
 
-Enum.each(by_category, fn cat ->
-  IO.puts(
-    "  - #{cat["category"]}: #{cat["count"]} items, avg $#{cat["avg_price"]}, #{cat["total_stock"]} in stock"
-  )
+Enum.each(by_category, fn {category, count, avg_price, total_stock} ->
+  IO.puts("  - #{category}: #{count} items, avg $#{avg_price}, #{total_stock} in stock")
 end)
 
 # Example 7: Complex chain
@@ -115,8 +113,8 @@ IO.puts("\n7. Low stock furniture items:")
   |> Relation.order("stock ASC")
   |> Relation.fetch_all()
 
-Enum.each(low_stock, fn product ->
-  IO.puts("  - #{product["name"]}: #{product["stock"]} units (RESTOCK NEEDED)")
+Enum.each(low_stock, fn {_id, name, _category, _price, stock} ->
+  IO.puts("  - #{name}: #{stock} units (RESTOCK NEEDED)")
 end)
 
 # Example 8: Using SQL relation
@@ -138,8 +136,8 @@ IO.puts("\n8. Custom SQL relation:")
   |> Relation.filter("stock_level = 'LOW'")
   |> Relation.fetch_all()
 
-Enum.each(custom, fn product ->
-  IO.puts("  - #{product["name"]} (#{product["category"]}): #{product["stock_level"]} stock")
+Enum.each(custom, fn {category, name, _price, stock_level} ->
+  IO.puts("  - #{name} (#{category}): #{stock_level} stock")
 end)
 
 Connection.close(conn)

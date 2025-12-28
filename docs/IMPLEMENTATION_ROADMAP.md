@@ -222,11 +222,11 @@
 - `tests/fast/test_json.py`
 
 ### Deliverables
-- [ ] CSV reading works
-- [ ] CSV writing works
-- [ ] Parquet reading works
-- [ ] Parquet writing works
-- [ ] JSON reading works
+- [x] CSV reading works
+- [x] CSV writing works
+- [x] Parquet reading works
+- [x] Parquet writing works
+- [x] JSON reading works
 - [ ] All data source tests passing
 
 ## Phase 5: Arrow Integration

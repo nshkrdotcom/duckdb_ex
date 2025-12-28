@@ -22,29 +22,46 @@ DuckdbEx brings DuckDB's analytical power to Elixir with:
 - **Lazy Relation API**: Composable, chainable query building inspired by Python's DuckDB API
 - **CLI-based Architecture**: Uses DuckDB CLI via erlexec for maximum portability
 - **Idiomatic Elixir**: Functional, pipe-friendly API with pattern matching
-- **Comprehensive Testing**: TDD approach with 71 passing tests
-- **Python API Compatibility**: Functions mirror the official Python API
+- **Comprehensive Testing**: TDD approach with 158 passing tests
+- **Python API Alignment**: SQL and Relation behavior mirror duckdb-python where feasible with the CLI backend
 
 ## Installation
+
+### Requirements
+
+DuckdbEx runs the DuckDB CLI via erlexec.
+
+- Recommended: `mix duckdb_ex.install` (installs to your project’s `priv/duckdb/duckdb`, or `priv/duckdb/duckdb.exe` on Windows)
+- Or install the DuckDB CLI (`duckdb`) and ensure it is on PATH, or set `DUCKDB_PATH` to the binary.
+- Optional: set `DUCKDB_EX_EXEC_AS_ROOT=1` to run the CLI as root (helpful in containers that require it).
+
+```bash
+mix duckdb_ex.install
+```
 
 ```elixir
 # Add to mix.exs
 def deps do
   [
-    {:duckdb_ex, "~> 0.1.1"}
+    {:duckdb_ex, "~> 0.2.0"}
   ]
 end
 ```
 
 ## Quick Start
 
-> **💡 New!** Check out the [examples/](examples/) directory for 8 comprehensive, runnable examples:
+> **💡 New!** Check out the [examples/README.md](examples/README.md) guide for 8 comprehensive, runnable examples:
 > ```bash
 > mix run examples/00_quickstart.exs
 > mix run examples/01_basic_queries.exs
 > mix run examples/02_tables_and_data.exs
 > # ... and more!
 > ```
+
+## Configuration
+
+- Resolution order: `config :duckdb_ex, :duckdb_path` → `DUCKDB_PATH` → `priv/duckdb/duckdb` → `duckdb` in PATH → `/usr/local/bin/duckdb`
+- `DUCKDB_EX_EXEC_AS_ROOT` - Set to `1` or `true` to run the CLI as root (useful in some containerized environments).
 
 ### Basic Connection and Queries
 
@@ -56,15 +73,15 @@ end
 {:ok, conn} = DuckdbEx.Connection.connect("/path/to/database.duckdb")
 
 # Execute SQL directly
-{:ok, result} = DuckdbEx.Connection.execute(conn, "SELECT 42 as answer")
+{:ok, result} = DuckdbEx.Connection.execute_result(conn, "SELECT 42 as answer")
 
-# Fetch all rows as maps
+# Fetch all rows as tuples
 {:ok, rows} = DuckdbEx.Connection.fetch_all(conn, "SELECT * FROM users")
-# => [%{"id" => 1, "name" => "Alice"}, ...]
+# => [{1, "Alice"}, ...]
 
 # Fetch single row
 {:ok, row} = DuckdbEx.Connection.fetch_one(conn, "SELECT * FROM users LIMIT 1")
-# => %{"id" => 1, "name" => "Alice"}
+# => {1, "Alice"}
 
 # Close connection
 DuckdbEx.Connection.close(conn)
@@ -103,6 +120,10 @@ relation = DuckdbEx.Connection.sql(conn, "SELECT * FROM generate_series(1, 100)"
 
 # From range (using DuckDB's range function)
 relation = DuckdbEx.Connection.sql(conn, "SELECT * FROM range(10)")
+
+# From values
+relation = DuckdbEx.Connection.values(conn, [1, "a"])
+relation = DuckdbEx.Connection.values(conn, [{1, "a"}, {2, "b"}])
 ```
 
 #### Filtering Data
@@ -178,7 +199,7 @@ relation
 relation
 |> DuckdbEx.Relation.aggregate("count(*) as total")
 |> DuckdbEx.Relation.fetch_all()
-# => {:ok, [%{"total" => 1000}]}
+# => {:ok, [{1000}]}
 
 # Multiple aggregations
 relation
@@ -228,15 +249,15 @@ DuckdbEx.Connection.table(conn, "products")
 ```elixir
 # Count rows
 relation |> DuckdbEx.Relation.count() |> DuckdbEx.Relation.fetch_all()
-# => {:ok, [%{"count" => 100}]}
+# => {:ok, [{100}]}
 
 # Sum a column
 relation |> DuckdbEx.Relation.sum("amount") |> DuckdbEx.Relation.fetch_all()
-# => {:ok, [%{"sum" => 45000}]}
+# => {:ok, [{45000}]}
 
 # Average
 relation |> DuckdbEx.Relation.avg("price") |> DuckdbEx.Relation.fetch_all()
-# => {:ok, [%{"avg" => 42.5}]}
+# => {:ok, [{42.5}]}
 
 # Min/Max
 relation |> DuckdbEx.Relation.min("temperature") |> DuckdbEx.Relation.fetch_all()
@@ -285,8 +306,8 @@ DuckdbEx.Connection.execute(conn, """
 
 # Result:
 # [
-#   %{"customer_name" => "Alice", "total_spent" => 1049.98, "order_count" => 2},
-#   %{"customer_name" => "Bob", "total_spent" => 299.99, "order_count" => 1}
+#   {"Alice", 1049.98, 2},
+#   {"Bob", 299.99, 1}
 # ]
 ```
 
@@ -373,19 +394,27 @@ conn
 
 - `connect(database, opts \\ [])` - Open database connection
 - `execute(conn, sql, params \\ [])` - Execute SQL query
+- `execute_result(conn, sql, params \\ [])` - Execute and return result struct
+- `executemany(conn, sql, params_list)` - Execute SQL with multiple parameter sets
 - `fetch_all(conn, sql)` - Execute and fetch all rows
 - `fetch_one(conn, sql)` - Execute and fetch first row
+- `fetch_many(conn, sql, count)` - Execute and fetch N rows
 - `close(conn)` - Close connection
 - `sql(conn, sql)` - Create relation from SQL
 - `table(conn, table_name)` - Create relation from table
+- `view(conn, view_name)` - Create relation from view
+- `values(conn, values)` - Create relation from values
+- `read_csv/read_json/read_parquet` - Create relation from files
 
 ### DuckdbEx.Relation
 
 **Transformations** (lazy, return new relation):
 - `project(relation, columns)` - Select columns
 - `filter(relation, condition)` - Filter rows
-- `limit(relation, n)` - Limit results
+- `limit(relation, n, offset \\ 0)` - Limit results
 - `order(relation, order_by)` - Sort results
+- `sort(relation, columns)` - Sort alias (list or string)
+- `unique(relation, columns)` - Distinct values for columns
 - `aggregate(relation, expressions, opts \\ [])` - Aggregate data
 
 **Convenience Aggregates**:
@@ -401,11 +430,22 @@ conn
 - `fetch_one(relation)` - Execute and fetch first row
 - `fetch_many(relation, n)` - Execute and fetch N rows
 
+**Table/View Operations**:
+- `create(relation, table_name)` / `to_table/2`
+- `create_view(relation, view_name, opts \\ [])` / `to_view/3`
+- `insert_into(relation, table_name)`
+- `insert(relation, values)`
+- `update(relation, set_map, condition \\ nil)`
+
+**Export**:
+- `to_csv(relation, path, opts \\ [])`
+- `to_parquet(relation, path, opts \\ [])`
+
 ### DuckdbEx.Result
 
-- `fetch_all(result)` - Get all rows as list of maps
-- `fetch_one(result)` - Get first row as map
-- `fetch_many(result, n)` - Get N rows as list of maps
+- `fetch_all(result)` - Get all rows as list of tuples
+- `fetch_one(result)` - Get first row as tuple
+- `fetch_many(result, n)` - Get N rows as list of tuples
 - `row_count(result)` - Get number of rows
 - `columns(result)` - Get column names
 - `to_tuples(result)` - Convert rows to tuples
@@ -418,12 +458,12 @@ DuckdbEx uses the DuckDB CLI process via erlexec instead of native NIFs:
 - ✅ Maximum portability (works everywhere DuckDB CLI works)
 - ✅ No compilation needed
 - ✅ Easy to debug and maintain
-- ✅ Handles all DuckDB features automatically
+- ✅ Handles core SQL features automatically
 
 **Trade-offs**:
 - JSON serialization overhead (minimal for analytical queries)
 - No zero-copy data transfer
-- Cannot implement native UDFs
+- No native UDF registration or embedded APIs (Arrow/Polars/Nx)
 
 This architecture is ideal for analytical workloads where query execution time dominates, and the JSON overhead is negligible compared to query processing.
 
@@ -443,6 +483,21 @@ The `examples/` directory contains 8 comprehensive, runnable examples demonstrat
 | `07_persistent_database.exs` | File-based databases | `mix run examples/07_persistent_database.exs` |
 
 See [examples/README.md](examples/README.md) for detailed descriptions and more information.
+Run everything with `examples/run_all.sh`.
+
+## Guides
+
+- `docs/guides/installation.md`
+- `docs/guides/configuration.md`
+- `docs/guides/connections.md`
+- `docs/guides/relations.md`
+- `docs/guides/data_io.md`
+- `docs/guides/types_expressions.md`
+- `docs/guides/results.md`
+- `docs/guides/errors.md`
+- `docs/guides/performance_limitations.md`
+- `docs/guides/migration_from_python.md`
+- `docs/guides/testing_contributing.md`
 
 ## Testing
 
@@ -460,27 +515,30 @@ mix test --cover
 mix test --seed 123456
 ```
 
-**Current Test Coverage**: 114 tests, 100% pass rate (after performance optimization)
+**Current Test Coverage**: 158 tests, 100% pass rate (after performance optimization)
 
 ## Development Status
 
 ### ✅ Implemented
 
 **Core Connection API**:
-- Connection management (connect, close)
-- Query execution (execute) with deterministic completion detection
-- Result fetching (fetch_all, fetch_one)
+- Connection management (connect, close, default connection helpers)
+- Query execution (execute, executemany) with parameter binding
+- Result fetching (fetch_all, fetch_one, fetch_many)
+- Statement parsing (extract_statements)
+- DB-API metadata (description, rowcount)
+- Cursor/duplicate support (Cursor wrapper)
 - Exception hierarchy (27 types)
 - Transaction management (begin, commit, rollback, transaction helper)
 - Checkpoint support
 - Read-only connections
 
 **Relation API - Basic Operations**:
-- Relation creation (sql, table)
+- Relation creation (sql, table, view, values)
 - Projections (project)
 - Filtering (filter)
-- Ordering (order)
-- Limiting (limit)
+- Ordering (order, sort)
+- Limiting (limit with offset)
 - Lazy evaluation
 
 **Relation API - Aggregations**:
@@ -488,18 +546,23 @@ mix test --seed 123456
 - GROUP BY support
 - HAVING clause (via filter after aggregate)
 - Convenience methods (count, sum, avg, min, max)
-- Statistical functions (stddev, variance)
+- Custom aggregate expressions (e.g., stddev_pop, variance) via aggregate/2
 
 **Relation API - Advanced**:
 - Joins (inner, left, right, outer, cross)
 - Set operations (union, intersect, except)
 - Distinct operations
 
+**Relation API - Mutations**:
+- Create tables/views from relations (create, create_view)
+- Insert rows (insert, insert_into)
+- Update table relations (update)
+
 **File Format Support**:
-- CSV reading/writing (read_csv_auto, COPY TO)
-- Parquet reading/writing
-- JSON reading/writing
-- Direct file querying
+- CSV reading/writing (read_csv, to_csv)
+- Parquet reading/writing (read_parquet, to_parquet)
+- JSON reading (read_json)
+- Direct file querying via SQL table functions
 
 **Performance**:
 - Optimized query execution (100-200x faster via completion markers)
@@ -545,7 +608,7 @@ result = (rel
 ```elixir
 # Elixir DuckDB
 {:ok, conn} = DuckdbEx.Connection.connect(:memory)
-{:ok, result} = conn
+{:ok, rows} = conn
 |> DuckdbEx.Connection.table("users")
 |> DuckdbEx.Relation.filter("age > 25")
 |> DuckdbEx.Relation.project(["name", "email"])
@@ -561,7 +624,7 @@ API is intentionally similar for easy migration!
 DuckdbEx uses a **completion marker approach** for deterministic query completion detection instead of timeouts:
 
 - **100-200x faster** query execution (7-12ms vs 1000-2000ms per query)
-- Full test suite runs in **~1 second** (114 tests)
+- Full test suite runs in **~1 second** (158 tests)
 - No arbitrary timeouts or guessing
 - Proper error handling for aborted transactions
 
@@ -593,9 +656,9 @@ When we see the marker in the output, we know DuckDB is done. The marker is stri
 
 ## Requirements
 
-- Elixir 1.14+
-- Erlang/OTP 25+
-- DuckDB CLI installed and in PATH
+- Elixir 1.18+
+- Erlang/OTP 27+
+- DuckDB CLI installed (PATH or `DUCKDB_PATH`)
 
 ## License
 
