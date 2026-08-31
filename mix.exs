@@ -37,7 +37,7 @@ defmodule DuckdbEx.MixProject do
       {:erlexec, "~> 2.0"},
 
       # Decimal precision for DuckDB DECIMAL type
-      {:decimal, "~> 2.0"},
+      {:decimal, "> 2.0"},
 
       # JSON support
       {:jason, "~> 1.4"},
