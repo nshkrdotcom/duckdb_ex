@@ -55,7 +55,8 @@ defmodule DuckdbEx.CLI do
   def install(opts \\ []) do
     dest_path = opts[:dest_path] || installed_path()
 
-    if File.exists?(dest_path) and !Keyword.get(opts, :force, false) do
+    if File.exists?(dest_path) and !Keyword.get(opts, :force, false) and
+         installed_matches?(dest_path, requested_version(opts)) do
       {:ok, dest_path}
     else
       with {:ok, version} <- resolve_version(opts),
@@ -76,8 +77,56 @@ defmodule DuckdbEx.CLI do
   def download_url(version, os, arch) when is_binary(version) do
     normalized = normalize_version(version)
 
-    with {:ok, dist, ext} <- distribution(os, arch) do
-      {:ok, "#{@install_base_url}/v#{normalized}/duckdb_cli-#{dist}.#{ext}"}
+    if tarball_layout?(normalized) do
+      with {:ok, dist, _ext} <- distribution(os, arch) do
+        {:ok, "#{@install_base_url}/v#{normalized}/duckdb-cli-#{dist}.tar.gz"}
+      end
+    else
+      with {:ok, dist, ext} <- distribution(os, arch) do
+        {:ok, "#{@install_base_url}/v#{normalized}/duckdb_cli-#{dist}.#{ext}"}
+      end
+    end
+  end
+
+  @doc """
+  The version an installed DuckDB CLI reports through `--version`, or `nil`
+  when the file cannot be run or its output carries no version.
+  """
+  @spec installed_version(String.t()) :: String.t() | nil
+  def installed_version(path) do
+    {output, 0} = System.cmd(path, ["--version"], stderr_to_stdout: true)
+
+    case Regex.run(~r/v?(\d+\.\d+\.\d+)/, output, capture: :all_but_first) do
+      [version] -> version
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
+  end
+
+  # DuckDB 2.0 publishes every CLI as `duckdb-cli-<platform>.tar.gz`, Windows
+  # included. 1.x used `duckdb_cli-<platform>.gz` (`.zip` on Windows).
+  defp tarball_layout?(version) do
+    case Integer.parse(version) do
+      {major, _rest} -> major >= 2
+      :error -> false
+    end
+  end
+
+  # An existing binary is kept unless an explicit version was asked for and
+  # the binary reports a different one. Without this check, a checkout that
+  # installed an older or newer CLI kept it indefinitely.
+  defp installed_matches?(_dest_path, nil), do: true
+
+  defp installed_matches?(dest_path, version),
+    do: installed_version(dest_path) == normalize_version(version)
+
+  defp requested_version(opts) do
+    case opts[:version] || System.get_env("DUCKDB_VERSION") do
+      version when is_binary(version) and version != "" -> version
+      _ -> nil
     end
   end
 
@@ -143,7 +192,26 @@ defmodule DuckdbEx.CLI do
     end
   end
 
-  defp extract_binary(body, :windows) do
+  # A 2.0+ tarball (every platform), recognised by its content: a gzip
+  # stream whose payload is a tar archive. 1.x `.gz` assets are a bare
+  # gzipped binary and fall through to the clauses below.
+  defp extract_binary(body, os) do
+    case :erl_tar.extract({:binary, body}, [:compressed, :memory]) do
+      {:ok, [_ | _] = entries} -> find_entry(entries, os)
+      _ -> extract_legacy(body, os)
+    end
+  end
+
+  defp find_entry(entries, os) do
+    name = if os == :windows, do: "duckdb.exe", else: "duckdb"
+
+    case Enum.find(entries, fn {entry, _} -> Path.basename(to_string(entry)) == name end) do
+      {_, binary} -> {:ok, binary}
+      nil -> {:error, :duckdb_binary_not_found}
+    end
+  end
+
+  defp extract_legacy(body, :windows) do
     case :zip.extract(body, [:memory]) do
       {:ok, entries} ->
         case Enum.find(entries, fn {name, _} ->
@@ -158,7 +226,7 @@ defmodule DuckdbEx.CLI do
     end
   end
 
-  defp extract_binary(body, _os) do
+  defp extract_legacy(body, _os) do
     {:ok, :zlib.gunzip(body)}
   end
 
